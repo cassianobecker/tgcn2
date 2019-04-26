@@ -10,7 +10,7 @@ import torch.optim as optim
 
 from ext.grid_graph import grid_graph
 from dataset.mnist.torch_data import loaders
-from nn.chebnet import ChebConvTime
+from nn.chebnet import ChebConvTimeFFT
 
 horizon = 4
 in_channels = 3
@@ -26,7 +26,7 @@ class TimeNet(torch.nn.Module):
 
         self.edge_index = torch.tensor([adj.tocoo().row, adj.tocoo().col], dtype=torch.long).to(device)
 
-        self.time_conv1 = ChebConvTime(in_channels, out_channels, order_filter=order_filter, horizon=horizon)
+        self.time_conv1 = ChebConvTimeFFT(in_channels, out_channels, order_filter=order_filter, horizon=horizon)
 
         self.fc1 = torch.nn.Linear(num_vertices * out_channels, num_classes)
 
