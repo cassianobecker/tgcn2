@@ -83,8 +83,8 @@ def train_minibatch(args, model, device, train_loader, optimizer, epoch, mini_ba
 
         if verbose:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx, len(train_loader.dataset),
-                100. * batch_idx / len(train_loader.dataset),
+                epoch, batch_idx + 1, len(train_loader.dataset),
+                100. * (batch_idx + 1) / len(train_loader.dataset),
                 temp_loss.item()))
 
     train_loss /= (len(train_loader.dataset) * len(data))
@@ -135,12 +135,12 @@ def experiment(args):
 
     parcellation = 'aparc'
     mat_size = 148
-    coarsening_levels = 4
+    #coarsening_levels = 4
 
     # parcellation == 'dense'
     # mat_size = 59412
 
-    batch_size = 10
+    batch_size = 1
     train_loader, test_loader = loaders(device, parcellation, batch_size=batch_size)
 
     model = NetTGCNBasic(mat_size)
@@ -159,7 +159,7 @@ def experiment(args):
         t1 = time.time()
 
         train_loss = train_minibatch(args, model, device, train_loader, optimizer, epoch, mini_batch=batch_size,
-                                     bverbose=True)
+                                     verbose=True)
 
         scheduler.step()
 

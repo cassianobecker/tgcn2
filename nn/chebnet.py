@@ -2,6 +2,7 @@ import torch
 from torch.nn import Parameter
 from torch_geometric.utils import degree, remove_self_loops
 from torch_sparse import spmm
+from nn.spmm import spmm_batch_2, spmm_batch_3
 import math
 
 

@@ -15,9 +15,9 @@ from dataset.hcp.matlab_data import get_cues, get_bold, load_structural, encode
 from dataset.hcp.downloaders import GitDownloader, HCPDownloader
 
 
-def loaders(device, parcellation, batch_size=10):
+def loaders(device, parcellation, batch_size=1):
     settings = configparser.ConfigParser()
-    settings_dir = os.path.join(get_root(), 'dataset', 'hcp' 'res', 'hcp_loader.ini')
+    settings_dir = os.path.join(get_root(), 'dataset', 'hcp', 'res', 'hcp_loader.ini')
     settings.read(settings_dir)
 
     train_set = HCPDataset(device, settings, parcellation, test=False)
@@ -94,7 +94,7 @@ class StreamMatlabDataset(torch.utils.data.Dataset):
         self.T = 284
         self.session = 'MOTOR_LR'
 
-        self.transform = EncodePerm(15, 4, 4, self.perm)
+        self.transform = EncodePerm(15, 4, 4)
 
     def get_graphs(self, device):
         coos = [torch.tensor([graph.tocoo().row, graph.tocoo().col], dtype=torch.long).to(device) for graph in
@@ -114,7 +114,7 @@ class StreamMatlabDataset(torch.utils.data.Dataset):
 
         # X_i = np.random.rand(1, 65000, 284)
 
-        Xw, yoh = self.transform(C_i, X_i)
+        Xw, yoh = self.transform(C_i, X_i, self.perm)
 
         return Xw, yoh
 
@@ -142,6 +142,7 @@ class HCPDataset(torch.utils.data.Dataset):
 
         # TODO session shouldn't be hardcoded
         self.session = 'MOTOR_LR'
+        self.coarsening_levels = 1
 
         # TODO magic numbers
         self.p = 148
@@ -220,25 +221,18 @@ class EncodePerm(object):
 
 ###################### THESE FUNCTIONS NEED TO BE EXPLAINED #####################
 
-# TODO can't these functions reuse from (a generalized) data.encode?
-# TODO this code is terribly complicated
-
-def encode_perm(C, X, H, Gp, Gn, indices):
+def encode_y(C, Np, N, T, m, Gn, Gp):
     """
-    encodes
-    :param C: data labels
-    :param X: data to be windowed
-    :param H: window size
-    :param Gp: start point guard
-    :param Gn: end point guard
-    :return:
+    Encodes the target signal to account for windowing
+    :param C: targets
+    :param Np: number of examples
+    :param N: length of windowed time signal
+    :param T: length of original time signal
+    :param m: number of classes
+    :param Gn: front guard length
+    :param Gp: back guard length
+    :return: y: encoded target signal
     """
-    _, m, _ = C.shape
-    Np, p, T = X.shape
-    N = T - H + 1
-    num_examples = Np * N
-
-    X = X.astype('float32')
     y = np.zeros([Np, N])
     C_temp = np.zeros(T)
 
@@ -254,31 +248,64 @@ def encode_perm(C, X, H, Gp, Gn, indices):
 
         y[i, :] = C_temp[0: N]
 
-    X_windowed = []  # np.zeros([Np, N, p, H])
+    return y
 
-    if indices is None:
-        for t in range(N):
-            X_windowed.append(X[0, :, t: t + H])  # 0 because there is always a single example in each batch
 
-        y = np.reshape(y, (num_examples))
-    else:
-        M, Q = X[0].shape
+def pad(X, Mnew, M):
+    """
+    Pads the data with zeros to account for dummy nodes
+    :param X: fMRI data
+    :param Mnew: number of nodes in graph (w/ dummies)
+    :param M: number of nodes in the original graph (w/o dummies)
+    :return: padded data
+    """
+    diff = Mnew - M
+    z = np.zeros((X.shape[0], diff, X.shape[2]), dtype="float32")
+    X = np.concatenate((X, z), axis=1)
+    return X
 
-        Mnew = len(indices)
-        assert Mnew >= M
 
-        if Mnew > M:
-            diff = Mnew - M
-            z = np.zeros((X.shape[0], diff, X.shape[2]), dtype="float32")
-            X = np.concatenate((X, z), axis=1)
+# TODO can't these functions reuse from (a generalized) data.encode?
+# TODO this code is terribly complicated
 
-        for t in range(N):
-            X_windowed.append(X[0, indices, t: t + H])
+def encode_perm(C, X, H, Gp, Gn, indices):
+    """
+    Encodes the time signal and targets to apply the windowing algorithm
+    :param C: data labels
+    :param X: data to be windowed
+    :param H: window size
+    :param Gp: start point guard
+    :param Gn: end point guard
+    :param indices: ordering of graph vertices
+    :return: X_windowed, y: encoded time signal and target classes
+    """
+    _, m, _ = C.shape
+    Np, p, T = X.shape
+    N = T - H + 1
+    num_examples = Np * N
 
-        y = np.reshape(y, (num_examples))
+    X = X.astype('float32')
 
-    # F = 1024 ** 2
-    # print('Bytes of X: {:1.4f} MB.'.format(getsizeof(X_windowed) / F))
+    y = encode_y(C, Np, N, T, m, Gn, Gp)
+    y = np.reshape(y, (num_examples))
+
+    X_windowed = []
+
+    # if indices is None:
+    #     for t in range(N):
+    #         X_windowed.append(X[0, :, t: t + H])  # 0 because there is always a single example in each batch
+    #
+    #     y = np.reshape(y, (num_examples))
+    # else:
+    M, Q = X[0].shape
+    Mnew = len(indices)
+    assert Mnew >= M
+
+    if Mnew > M:
+        X = pad(X)
+
+    for t in range(N):
+        X_windowed.append(X[0, indices, t: t + H])  # reorder the nodes based on perm order
 
     return [X_windowed, y]
 
