@@ -1,52 +1,100 @@
 import os
 import requests
+import logging
 
 
 class HcpDownloader:
 
-    def __init__(self, settings):
+    def __init__(self, settings, test):
         self.settings = settings
+        if test:
+            self.logger = logging.getLogger('HCP_Test_Downloader')
+        else:
+            self.logger = logging.getLogger('HCP_Train_Downloader')
+        level = settings['LOGGING']['downloader_logging_level']
+        level_dict = {
+            'debug': logging.DEBUG,
+            'info': logging.INFO,
+            'warning': logging.WARNING,
+            'error': logging.ERROR,
+            'critical': logging.CRITICAL
+        }
+        self.logger.setLevel(level_dict[level])
+        log_stream = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        log_stream.setLevel(level_dict[level])
+        log_stream.setFormatter(formatter)
+        self.logger.addHandler(log_stream)
 
     def load(self, path):
-
-        if not os.path.isfile(path):
-            #logging.info, file not found
+        path = os.path.join(self.settings['DIRECTORIES']['local_server_directory'], path)
+        if os.path.isfile(path):
+            self.logger.debug("File found in: " + path)
+        else:
+            self.logger.info("File not found in: " + path)
             subject = path.split('/')[3]
             key = path.split('/MNINonLinear/')[1]
             url = self.settings['SERVERS']['hcp_server_url'].format(subject, subject, subject) + key
-            #logging.info, "remote download from server + url"
+            self.logger.info("Remote download from server: " + url)
+
+            if self.settings['CREDENTIALS']['hcp_server_username'] == [] or self.settings['CREDENTIALS']['hcp_server_password'] == []:
+                self.logger.error("HCP server credentials are empty")
+
             r = requests.get(url,
                              auth=(self.settings['CREDENTIALS']['hcp_server_username'], self.settings['CREDENTIALS']['hcp_server_password']),
                              stream=True)
-            #log status code
             if r.status_code == 200:
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, 'wb') as f:
-                    #log.debug, "writing url to + path"
+                    self.logger.debug("Writing to path: " + path)
                     f.write(r.content)
-                    #log.debug, "writing done"
-            #else log.error depending on status code "request unsuccessful. Error + r.status_code"
-
-        #else (invert it) logging.info(file is found)
+                    self.logger.debug("Writing to " + path + 'completed')
+            else:
+                self.logger.error("Request unsuccessful: Error " + r.status_code)
 
 
 class DtiDownloader:
 
-    def __init__(self, settings):
+    def __init__(self, settings, test):
         self.base_path = settings['SERVERS']['dti_server_url']
+        self.local_path = settings['DIRECTORIES']['local_server_directory']
+        if test:
+            self.logger = logging.getLogger('Dti_Test_Downloader')
+        else:
+            self.logger = logging.getLogger('Dti_Train_Downloader')
+        level = settings['LOGGING']['downloader_logging_level']
+        level_dict = {
+            'debug': logging.DEBUG,
+            'info': logging.INFO,
+            'warning': logging.WARNING,
+            'error': logging.ERROR,
+            'critical': logging.CRITICAL
+        }
+        self.logger.setLevel(level_dict[level])
+        log_stream = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        log_stream.setLevel(level_dict[level])
+        log_stream.setFormatter(formatter)
+        self.logger.addHandler(log_stream)
 
     def load(self, path):
-
-        if not os.path.isfile(path):
-
+        path = os.path.join(self.local_path, path)
+        if os.path.isfile(path):
+            self.logger.debug("File found in: " + path)
+        else:
+            self.logger.info("File not found in: " + path)
             subject = path.split('/')[3]
             key = path.split('/MNINonLinear/')[1]
             temp = key.split('/', 1)
             key = temp[0] + '/' + subject + '/' + temp[1]
             url = self.base_path + key
             r = requests.get(url)
-
+            self.logger.info("Remote download from server: " + url)
             if r.status_code == 200:
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, 'wb') as f:
+                    self.logger.debug("Writing to path: " + path)
                     f.write(r.content)
+                    self.logger.debug("Writing to " + path + 'completed')
+            else:
+                self.logger.error("Request unsuccessful: Error " + r.status_code)

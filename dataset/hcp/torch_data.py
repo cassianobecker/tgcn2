@@ -1,6 +1,7 @@
 import os
 import torch
 import configparser
+import logging
 
 import numpy as np
 import scipy.io as sio
@@ -23,9 +24,6 @@ def loaders(device, batch_size=1):
     params = configparser.ConfigParser()
     params_dir = os.path.join(get_root(), 'dataset', 'hcp', 'res', 'hcp_experiment.ini')
     params.read(params_dir)
-
-    #TODO create logger(settings[logging_level], datefmt=)
-    # logging.getlogger()
 
     train_set = HcpDataset(device, settings, params, test=False)
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=False)
@@ -98,9 +96,9 @@ class HcpDataset(torch.utils.data.Dataset):
         self.params = params
         self.settings = settings
 
-        hcp_downloader = HcpDownloader(settings)
-        dti_downloader = DtiDownloader(settings)
-        self.loaders = [hcp_downloader, dti_downloader]
+        hcp_downloader = HcpDownloader(settings, test)
+        dti_downloader = DtiDownloader(settings, test)
+        self.loaders = {'hcp_downloader': hcp_downloader, 'dti_downloader': dti_downloader}
 
         self.list_file = 'subjects.txt'
         if test:
@@ -108,7 +106,21 @@ class HcpDataset(torch.utils.data.Dataset):
         else:
             list_url = os.path.join(get_root(), 'conf/hcp/train/motor_lr', self.list_file)
 
-        # self.data_path = os.path.join(expanduser("~"), 'data_dense')
+        self.logger = logging.getLogger('HCP_Dataset')
+        level = settings['LOGGING']['dataloader_logging_level']
+        level_dict = {
+            'debug': logging.DEBUG,
+            'info': logging.INFO,
+            'warning': logging.WARNING,
+            'error': logging.ERROR,
+            'critical': logging.CRITICAL
+        }
+        self.logger.setLevel(level_dict[level])
+        log_stream = logging.StreamHandler()
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        log_stream.setLevel(level_dict[level])
+        log_stream.setFormatter(formatter)
+        self.logger.addHandler(log_stream)
 
         self.subjects = load_subjects(list_url)
 

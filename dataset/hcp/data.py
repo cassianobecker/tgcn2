@@ -1,5 +1,6 @@
 import os
 import warnings
+import logging
 
 import nibabel as nib
 import numpy as np
@@ -10,14 +11,13 @@ import scipy.sparse
 from util.path import get_root
 
 
-# TODO include logging (instead of the commented prints)
-
-
 def load_subjects(list_url):
-    #logging.info, loading subjects from + list_url
+    logger = logging.getLogger('HCP_Dataset')
+    logger.info('Loading subjects from ' + list_url)
     with open(list_url, 'r') as f:
         subjects = [s.strip() for s in f.readlines()]
-    #logging.info, loaded len(subjects) subjects
+    logger.info('Loaded ' + str(len(subjects)) + ' subjects from: ' + list_url)
+    logger.handlers.pop()
     return subjects
 
 
@@ -27,17 +27,17 @@ def process_subject(params, subject, tasks, loaders):
     tr = float(params['FMRI']['tr'])
     physio_sampling_rate = int(params['FMRI']['physio_sampling_rate'])
 
-    hcp_downloader = loaders[0]
-    git_downloader = loaders[1]
+    hcp_downloader = loaders['hcp_downloader']
+    logger = logging.getLogger('HCP_Dataset')
 
     data = dict()
 
-    # logging.info('Processing subject {}'.format(subject))
+    logger.info('Processing subject {}'.format(subject))
     task_list = dict()
 
     for task in tasks:
 
-        # logging.info('\n--- task {} ...'.format(task))
+        logger.debug('Processing task {} ...'.format(task))
 
         task_dict = dict()
 
@@ -69,43 +69,51 @@ def get_ts(subject, task, parc, settings):
     parc_vector, parc_labels = get_parcellation(parc, subject, settings)
 
     # parcellate time series
-    ts_p = parcellate(ts, parc, parc_vector, parc_labels)
+    ts_p = parcellate(ts, parc, subject, parc_vector, parc_labels)
 
     return ts_p
 
 
 def load_ts_for_subject_task(subject, task, hcp_downloader):
-    # logging.info("  loading time series...", end="", flush=True)
+    logger = logging.getLogger('HCP_Dataset')
+    logger.debug("Loading time series for " + subject)
 
     fname = 'tfMRI_' + task + '_Atlas.dtseries.nii'
     furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, fname)
 
-    path = '/tmp/' + furl
-    hcp_downloader.load(path)
+    hcp_downloader.load(furl)
+    try:
+        furl = os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], furl)
+        ts = np.array(nib.load(furl).get_data())
+    except:
+        logger.error("File " + furl + " not found")
+        exit(-1)    # TODO: Fix while resolving issue #2
 
-    ts = np.array(nib.load(path).get_data())
+    logger.debug("Done")
 
     return ts
 
 
 def get_cues(subject, task, hcp_downloader):
-    fpath = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, 'EVs')
-    path = '/tmp/' + fpath
+    logger = logging.getLogger('HCP_Dataset')
+    furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, 'EVs')
     files = ['cue.txt', 'lf.txt', 'lh.txt', 'rf.txt', 'rh.txt', 't.txt']
 
     for file in files:
-        new_path = os.path.join(path, file)
+        new_path = os.path.join(furl, file)
         hcp_downloader.load(new_path)
 
-    files = os.listdir(path)
-    cues = [file.split('.')[0] for file in files if file != 'Sync.txt']
+    files = os.listdir(os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], furl))
+    try:
+        cues = [file.split('.')[0] for file in files if file != 'Sync.txt']
+    except:
+        logger.error("File " + file + " not found")
 
     return cues
 
 
-def get_cue_times(cue, subject, task, settings, TR):
-    fpath = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, 'EVs')
-    fpath = '/tmp/' + fpath
+def get_cue_times(cue, subject, task, hcp_downloader, TR):
+    fpath = os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], 'HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, 'EVs')
     furl = os.path.join(fpath, cue + '.txt')
     with open(furl) as inp:
         evs = [line.strip().split('\t') for line in inp]
@@ -114,7 +122,8 @@ def get_cue_times(cue, subject, task, settings, TR):
 
 
 def get_all_cue_times(subject, task, hcp_downloader, TR, ts_length):
-    # logging.info("  reading cue signals...", end="", flush=True)
+    logger = logging.getLogger('HCP_Dataset')
+    logger.debug("Reading cue signals for " + subject)
 
     cues = {cue: get_cue_times(cue, subject, task, hcp_downloader, TR) for cue in
             get_cues(subject, task, hcp_downloader)}
@@ -128,23 +137,28 @@ def get_all_cue_times(subject, task, hcp_downloader, TR, ts_length):
         for j in limb:
             cue_arr[i, j] = 1
 
-    # logging.info("Read cue signals for + subject") ##done
+    logger.debug("Done")
 
     return cue_arr
 
 
 def get_parcellation(parc, subject, hcp_downloader):
-    # logging.info("  reading parcellation...", end="", flush=True)
+    logger = logging.getLogger('HCP_Dataset')
+    logger.debug("Reading parcellation for " + subject)
 
     fpath = os.path.join('HCP_1200', subject, 'MNINonLinear', 'fsaverage_LR32k')
 
     suffixes = {'aparc': '.aparc.a2009s.32k_fs_LR.dlabel.nii',
                 'dense': '.aparc.a2009s.32k_fs_LR.dlabel.nii'}
 
-    parc_furl = os.path.join('/tmp/', fpath, subject + suffixes[parc])
+    parc_furl = os.path.join(fpath, subject + suffixes[parc])
 
     hcp_downloader.load(parc_furl)
-    parc_obj = nib.load(parc_furl)
+    try:
+        parc_obj = nib.load(os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], parc_furl))
+    except:
+        logger.error("File " + os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], parc_furl)
+                     + " not found")
 
     if parc == 'aparc':
         parc_vector = np.array(parc_obj.get_data()[0], dtype='int')
@@ -156,13 +170,14 @@ def get_parcellation(parc, subject, hcp_downloader):
         parc_vector = np.array(range(n_regions))
         parc_labels = [(i, i) for i in range(n_regions)]
 
-    # logging.info("done.")
+    logger.debug("Done")
 
     return parc_vector, parc_labels
 
 
-def parcellate(ts, parc, parc_vector, parc_labels):
-    # logging.info("  performing parcellation...", end="", flush=True)
+def parcellate(ts, parc, subject, parc_vector, parc_labels):
+    logger = logging.getLogger('HCP_Dataset')
+    logger.debug("Performing parcellation for " + subject)
 
     tst = ts[:, :parc_vector.shape[0]]
 
@@ -179,24 +194,28 @@ def parcellate(ts, parc, parc_vector, parc_labels):
     if parc == 'dense':
         x_parc = tst.T
 
-    # logging.info("done.")
+    logger.debug("Done")
 
     return x_parc
 
 
 def get_vitals(subject, task, hcp_downloader, TR, fh):
-    # logging.info("  reading vitals...", end="", flush=True)
+    logger = logging.getLogger('HCP_Dataset')
+    logger.debug("Reading vitals for " + subject)
 
     fname = 'tfMRI_' + task + '_Physio_log.txt'
     furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, fname)
-    path = '/tmp/' + furl
 
-    hcp_downloader.load(path)
+    hcp_downloader.load(furl)
 
-    with open(path) as inp:
-        phy = [line.strip().split('\t') for line in inp]
-        resp = [int(phy_line[1]) for phy_line in phy]
-        heart = [int(phy_line[2]) for phy_line in phy]
+    try:
+        with open(os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], furl)) as inp:
+            phy = [line.strip().split('\t') for line in inp]
+            resp = [int(phy_line[1]) for phy_line in phy]
+            heart = [int(phy_line[2]) for phy_line in phy]
+    except:
+        logger.error("File " + os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], furl)
+                     + " not found")
 
     # base TR period fMRI sampling rate
 
@@ -207,7 +226,7 @@ def get_vitals(subject, task, hcp_downloader, TR, fh):
     heart_d = scipy.signal.decimate(np.array(heart[:-1]), q, n, zero_phase=True)
     resp_d = scipy.signal.decimate(np.array(resp[:-1]), q, n, zero_phase=True)
 
-    # logging.info("done.")
+    logger.debug("Done")
 
     return heart_d, resp_d
 
@@ -287,12 +306,15 @@ def filter_surf_vertices(coords):
 
 
 def get_adj_hemi(hemi, inflation, subject, hcp_downloader, offset):
+    logger = logging.getLogger('HCP_Dataset')
     fname = subject + '.' + hemi + '.' + inflation + '.32k_fs_LR.surf.gii'
     furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'fsaverage_LR32k', fname)
-    file = '/tmp/' + furl
 
-    hcp_downloader.load(file)
-    img = nib.load(file)
+    hcp_downloader.load(furl)
+    try:
+        img = nib.load(os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], furl))
+    except:
+        logger.error("File " + os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], furl) + " not found")
 
     coords = img.darrays[0].data
     faces = img.darrays[1].data.astype(int) + offset
@@ -304,56 +326,63 @@ def get_adj_hemi(hemi, inflation, subject, hcp_downloader, offset):
 
 def get_adj(subject, parc, loaders):
     if parc == 'aparc':
-        adj = get_adj_dti(subject, parc, loaders[1])
+        adj = get_adj_dti(subject, parc, loaders['dti_downloader'])
 
     elif parc == 'dense':
-        adj, coords = get_adj_mesh(subject, loaders[0])
+        adj, coords = get_adj_mesh(subject, loaders['hcp_downloader'])
 
     return adj
 
 
-def get_adj_dti(subject, parc, git_downloader):
-    # print("\n--- dti adjacency matrix...", end="", flush=True)
+def get_adj_dti(subject, parc, dti_downloader):
+    logger = logging.getLogger('HCP_Dataset')
+    logger.debug("Reading dti adjacency matrix for " + subject)
     furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'dMRI_CONN')
-    file = '/tmp/' + furl + '/' + subject + '.aparc.a2009s.dti.conn.mat'
+    file = furl + '/' + subject + '.aparc.a2009s.dti.conn.mat'
 
-    git_downloader.load(file)
+    dti_downloader.load(file)
 
     try:
-        S = sio.loadmat(file)
+        S = sio.loadmat(os.path.join(dti_downloader.local_path, file))
         S = S.get('S')
     except:
         file_dir = os.path.join(get_root(), 'load/res/average1.aparc.a2009s.dti.conn.mat')
-        S = sio.loadmat(file_dir).get('S')
+        try:
+            S = sio.loadmat(file_dir).get('S')
+        except:
+            logger.error("File " + file_dir + " not found")
+            exit(-1)    # TODO: Fix with issue #2
         warnings.warn(
             "Local DTI adjacency matrix for subject: <subject> in parcellation:<parcellation>  not available, using average adjacency matrix.")
 
     S_coo = scipy.sparse.coo_matrix(S)
+    logger.debug("Done")
 
     return S_coo
 
 
 def get_adj_mesh(subject, settings):
-    # logging.info("\n--- mesh adjacency matrix for + subject")
+    logger = logging.getLogger('HCP_Dataset')
+    logger.debug("Reading mesh adjacency matrix for" + subject)
 
     inflation = 'inflated'  # 'white'
 
-    # logging.info("  processing left hemisphere edges...", end="", flush=True)
+    logger.debug("Processing left hemisphere edges for " + subject)
     hemi = 'L'
     rows_L, cols_L, coords_L = get_adj_hemi(hemi, inflation, subject, settings, offset=0)
-    # logging.info("done.")
+    logger.debug("Done")
 
-    # logging.info("  processing right hemisphere edges...", end="", flush=True)
+    logger.debug("Processing right hemisphere edges for " + subject)
     hemi = 'R'
     rows_R, cols_R, coords_R = get_adj_hemi(hemi, inflation, subject, settings, offset=0)
-    # logging.info("done.")
+    logger.debug("Done")
 
-    # logging.info("  processing coordinates...", end="", flush=True)
+    logger.debug("Processing coordinates for " + subject)
     data = np.ones(len(rows_L) + len(rows_R))
     A = scipy.sparse.coo_matrix((data, (rows_L + rows_R, cols_L + cols_R)))
     coords = np.vstack((coords_L, coords_R))
     new_coords = filter_surf_vertices(coords)
-    # logging.info("done.")
+    logger.debug("Done")
 
     return A, new_coords
 
