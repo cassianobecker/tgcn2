@@ -32,39 +32,6 @@ def loaders(device, parcellation, batch_size=1):
     return train_loader, test_loader
 
 
-class MatlabDataset(torch.utils.data.Dataset):  #TODO Delete and commit
-
-    def __init__(self, perm):
-        self.list_file = 'subjects_test.txt'
-        list_url = os.path.join(get_root(), 'conf', self.list_file)
-        self.data_path = os.path.join(os.path.expanduser("~"), 'data_full')
-
-        self.subjects = load_subjects(list_url)
-        post_fix = '_aparc_tasks_aparc.mat'
-        self.filenames = [s + post_fix for s in self.subjects]
-
-        self.p = 148
-        self.T = 284
-        self.session = 'MOTOR_LR'
-
-        self.transform = Encode(15, 4, 4, perm)
-
-    def __len__(self):
-        return len(self.filenames)
-
-    def __getitem__(self, idx):
-        file = os.path.join(self.data_path, self.filenames[idx])
-        ds = sio.loadmat(file).get('ds')
-        MOTOR = ds[0, 0][self.session]
-
-        C_i = np.expand_dims(get_cues(MOTOR), 0)
-        X_i = np.expand_dims(get_bold(MOTOR).transpose(), 0)
-
-        Xw, yoh = self.transform(C_i, X_i)
-
-        return Xw.astype('float32'), yoh
-
-
 class StreamMatlabDataset(torch.utils.data.Dataset):
 
     def __init__(self):
@@ -189,23 +156,6 @@ class HcpDataset(torch.utils.data.Dataset):
         return Xw, yoh, coos, perm
 
 
-class Encode(object):   #TODO Delete and commit
-
-    def __init__(self, H, Gp, Gn, perm):
-        self.H = H
-        self.Gp = Gp
-        self.Gn = Gn
-
-    def __call__(self, C, X, perm):
-        Xw, y = encode(C, X, self.H, self.Gp, self.Gn)
-        Xw = perm_data_time(Xw, perm)
-
-        k = np.max(np.unique(y))
-        yoh = one_hot(y, k + 1)
-
-        return Xw, yoh
-
-
 class SlidingWindow(object):
 
     def __init__(self, H, Gp, Gn):
@@ -303,31 +253,3 @@ def encode_perm(C, X, H, Gp, Gn, indices):
         X_windowed.append(X[0, indices, t: t + H])  # reorder the nodes based on perm order
 
     return [X_windowed, y]
-
-
-def perm_data_time(x, indices): #TODO Delete and commit
-    """
-    Permute data matrix, i.e. exchange node ids,
-    so that binary unions form the clustering tree.
-    """
-    if indices is None:
-        return x
-
-    N, M, Q = x.shape
-    Mnew = len(indices)
-
-    assert Mnew >= M
-
-    xnew = np.empty((N, Mnew, Q), dtype="float32")
-
-    for i, j in enumerate(indices):
-        # Existing vertex, i.e. real data.
-        if j < M:
-            xnew[:, i, :] = x[:, j, :]
-        # Fake vertex because of singeltons.
-        # They will stay 0 so that max pooling chooses the singelton.
-        # Or -infty ?
-        else:
-            xnew[:, i, :] = np.zeros((N, Q))
-
-    return xnew
