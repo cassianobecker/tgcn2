@@ -141,7 +141,7 @@ def experiment(args):
     # mat_size = 59412
 
     batch_size = 1
-    train_loader, test_loader = loaders(device, parcellation, batch_size=batch_size)
+    train_loader, test_loader = loaders(device, batch_size=batch_size)
 
     model = NetTGCNBasic(mat_size)
 

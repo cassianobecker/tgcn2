@@ -21,7 +21,12 @@ def load_subjects(list_url):
     return subjects
 
 
-def process_subject(parc, subject, tasks, loaders):
+def process_subject(params, subject, tasks, loaders):
+
+    parc = params['PARCELLATION']['parcellation']
+    tr = float(params['FMRI']['tr'])
+    physio_sampling_rate = int(params['FMRI']['physio_sampling_rate'])
+
     hcp_downloader = loaders[0]
     git_downloader = loaders[1]
 
@@ -38,9 +43,9 @@ def process_subject(parc, subject, tasks, loaders):
 
         ts = get_ts(subject, task, parc, hcp_downloader)
 
-        cue_arr = get_all_cue_times(subject, task, hcp_downloader)
+        cue_arr = get_all_cue_times(subject, task, hcp_downloader, tr, ts.shape[1])
 
-        heart, resp = get_vitals(subject, task, hcp_downloader)
+        heart, resp = get_vitals(subject, task, hcp_downloader, tr, physio_sampling_rate)
 
         task_dict['ts'] = ts
         task_dict['cues'] = cue_arr
@@ -108,17 +113,15 @@ def get_cue_times(cue, subject, task, settings, TR):
     return evs_t
 
 
-def get_all_cue_times(subject, task, hcp_downloader):
+def get_all_cue_times(subject, task, hcp_downloader, TR, ts_length):
     # logging.info("  reading cue signals...", end="", flush=True)
 
-    TR = 0.72
     cues = {cue: get_cue_times(cue, subject, task, hcp_downloader, TR) for cue in
             get_cues(subject, task, hcp_downloader)}
 
     cue_list = [cues['lf'], cues['lh'], cues['rf'], cues['rh'], cues['t']]
 
-    # TODO magic number
-    cue_arr = np.zeros((len(cue_list), 284), dtype=int)
+    cue_arr = np.zeros((len(cue_list), ts_length), dtype=int)
 
     for i in range(len(cue_list)):
         limb = cue_list[i]
@@ -181,10 +184,8 @@ def parcellate(ts, parc, parc_vector, parc_labels):
     return x_parc
 
 
-def get_vitals(subject, task, hcp_downloader):
+def get_vitals(subject, task, hcp_downloader, TR, fh):
     # logging.info("  reading vitals...", end="", flush=True)
-
-    TR = 0.72
 
     fname = 'tfMRI_' + task + '_Physio_log.txt'
     furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, fname)
@@ -200,8 +201,6 @@ def get_vitals(subject, task, hcp_downloader):
     # base TR period fMRI sampling rate
 
     fl = 1 / TR
-    # physio sampling rate
-    fh = 400
     # decimation order
     n = 2
     q = int(fh / fl)

@@ -15,18 +15,22 @@ from dataset.hcp.matlab_data import get_cues, get_bold, load_structural, encode
 from dataset.hcp.downloaders import DtiDownloader, HcpDownloader
 
 
-def loaders(device, parcellation, batch_size=1):
+def loaders(device, batch_size=1):
     settings = configparser.ConfigParser()
     settings_dir = os.path.join(get_root(), 'dataset', 'hcp', 'res', 'hcp_database.ini')
     settings.read(settings_dir)
 
+    params = configparser.ConfigParser()
+    params_dir = os.path.join(get_root(), 'dataset', 'hcp', 'res', 'hcp_experiment.ini')
+    params.read(params_dir)
+
     #TODO create logger(settings[logging_level], datefmt=)
     # logging.getlogger()
 
-    train_set = HcpDataset(device, settings, parcellation, test=False)
+    train_set = HcpDataset(device, settings, params, test=False)
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=False)
 
-    test_set = HcpDataset(device, settings, parcellation, test=True)
+    test_set = HcpDataset(device, settings, params, test=True)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
 
     return train_loader, test_loader
@@ -60,8 +64,6 @@ class StreamMatlabDataset(torch.utils.data.Dataset):
         post_fix = '_aparc_tasks_aparc.mat'
         self.filenames = [s + post_fix for s in self.subjects]
 
-        self.p = 148  # 65000
-        self.T = 284
         self.session = 'MOTOR_LR'
 
         self.transform = SlidingWindow(15, 4, 4)
@@ -91,9 +93,9 @@ class StreamMatlabDataset(torch.utils.data.Dataset):
 
 class HcpDataset(torch.utils.data.Dataset):
 
-    def __init__(self, device, settings, parcellation='aparc', coarsening_levels=1, test=False):
+    def __init__(self, device, settings, params, coarsening_levels=1, test=False):
 
-        self.parcellation = parcellation
+        self.params = params
         self.settings = settings
 
         hcp_downloader = HcpDownloader(settings)
@@ -114,12 +116,9 @@ class HcpDataset(torch.utils.data.Dataset):
         self.session = 'MOTOR_LR'
         self.coarsening_levels = 1
 
-        # TODO magic numbers
-        self.p = 148
-        self.T = 284
-        self.H = 15
-        self.Gp = 4
-        self.Gn = 4
+        self.H = int(params['TIME_SERIES']['horizon'])
+        self.Gp = int(params['TIME_SERIES']['guard_front'])
+        self.Gn = int(params['TIME_SERIES']['guard_back'])
 
         self.transform = SlidingWindow(self.H, self.Gp, self.Gn)
         self.device = device
@@ -133,7 +132,7 @@ class HcpDataset(torch.utils.data.Dataset):
 
         subject = self.subjects[idx]
 
-        data = process_subject(self.parcellation, subject, [self.session], self.loaders)
+        data = process_subject(self.params, subject, [self.session], self.loaders)
 
         cues = data['functional']['MOTOR_LR']['cues']
         ts = data['functional']['MOTOR_LR']['ts']
@@ -148,10 +147,7 @@ class HcpDataset(torch.utils.data.Dataset):
         coos = [torch.tensor([graph.tocoo().row, graph.tocoo().col], dtype=torch.long).to(self.device) for graph in
                 graphs]
 
-        C_i = np.expand_dims(cues, 0)   #TODO put this into transform
-        X_i = np.expand_dims(ts, 0)
-
-        Xw, yoh = self.transform(C_i, X_i, perm)
+        Xw, yoh = self.transform(cues, ts, perm)
 
         return Xw, yoh, coos, perm
 
@@ -163,8 +159,7 @@ class SlidingWindow(object):
         self.Gp = Gp
         self.Gn = Gn
 
-
-    def __call__(self, C, X, perm): #TODO: put encode perm function here as two functions, encode_y and encode_x
+    def __call__(self, cues, ts, perm):
 
         def encode_y(C, Np, N, T, m, Gn, Gp):
             """
@@ -195,10 +190,25 @@ class SlidingWindow(object):
                 y[i, :] = C_temp[0: N]
 
             y = np.reshape(y, num_examples)
-            k = np.max(np.unique(y))  # TODO: move within encode_y
+            k = np.max(np.unique(y))
             yoh = one_hot(y, k + 1)
 
             return yoh
+
+        def encode_x(X):
+            X_windowed = []
+            X = X.astype('float32')
+            M, Q = X[0].shape
+            Mnew = len(perm)
+            assert Mnew >= M
+
+            if Mnew > M:
+                X = pad(X)
+
+            for t in range(N):
+                X_windowed.append(X[0, perm, t: t + self.H])  # reorder the nodes based on perm order
+
+            return X_windowed
 
         def pad(X, Mnew, M):
             """
@@ -213,42 +223,15 @@ class SlidingWindow(object):
             X = np.concatenate((X, z), axis=1)
             return X
 
+        C = np.expand_dims(cues, 0)
+        X = np.expand_dims(ts, 0)
+
         _, m, _ = C.shape
         Np, p, T = X.shape
         N = T - self.H + 1
 
         yoh = encode_y(C, Np, N, T, m, self.Gn, self.Gp)
 
-        X_windowed = []
-        X = X.astype('float32')
-        M, Q = X[0].shape
-        Mnew = len(perm)
-        assert Mnew >= M
-
-        if Mnew > M:
-            X = pad(X)
-
-        for t in range(N):
-            X_windowed.append(X[0, perm, t: t + self.H])  # reorder the nodes based on perm order
+        X_windowed = encode_x(X)
 
         return X_windowed, yoh
-
-
-###################### THESE FUNCTIONS NEED TO BE EXPLAINED #####################
-
-
-# TODO can't these functions reuse from (a generalized) data.encode?
-# TODO this code is terribly complicated
-
-def encode_perm(C, X, H, Gp, Gn, indices):
-    """
-    Encodes the time signal and targets to apply the windowing algorithm
-    :param C: data labels
-    :param X: data to be windowed
-    :param H: window size
-    :param Gp: start point guard
-    :param Gn: end point guard
-    :param indices: ordering of graph vertices
-    :return: X_windowed, y: encoded time signal and target classes
-    """
-
