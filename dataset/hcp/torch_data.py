@@ -12,24 +12,27 @@ from util.encode import one_hot
 
 from dataset.hcp.data import load_subjects, process_subject
 from dataset.hcp.matlab_data import get_cues, get_bold, load_structural, encode
-from dataset.hcp.downloaders import GitDownloader, HCPDownloader
+from dataset.hcp.downloaders import DtiDownloader, HcpDownloader
 
 
 def loaders(device, parcellation, batch_size=1):
     settings = configparser.ConfigParser()
-    settings_dir = os.path.join(get_root(), 'dataset', 'hcp', 'res', 'hcp_loader.ini')
+    settings_dir = os.path.join(get_root(), 'dataset', 'hcp', 'res', 'hcp_database.ini')
     settings.read(settings_dir)
 
-    train_set = HCPDataset(device, settings, parcellation, test=False)
+    #TODO create logger(settings[logging_level], datefmt=)
+    # logging.getlogger()
+
+    train_set = HcpDataset(device, settings, parcellation, test=False)
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=False)
 
-    test_set = HCPDataset(device, settings, parcellation, test=True)
+    test_set = HcpDataset(device, settings, parcellation, test=True)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
 
     return train_loader, test_loader
 
 
-class MatlabDataset(torch.utils.data.Dataset):
+class MatlabDataset(torch.utils.data.Dataset):  #TODO Delete and commit
 
     def __init__(self, perm):
         self.list_file = 'subjects_test.txt'
@@ -94,7 +97,7 @@ class StreamMatlabDataset(torch.utils.data.Dataset):
         self.T = 284
         self.session = 'MOTOR_LR'
 
-        self.transform = EncodePerm(15, 4, 4)
+        self.transform = SlidingWindow(15, 4, 4)
 
     def get_graphs(self, device):
         coos = [torch.tensor([graph.tocoo().row, graph.tocoo().col], dtype=torch.long).to(device) for graph in
@@ -119,16 +122,16 @@ class StreamMatlabDataset(torch.utils.data.Dataset):
         return Xw, yoh
 
 
-class HCPDataset(torch.utils.data.Dataset):
+class HcpDataset(torch.utils.data.Dataset):
 
     def __init__(self, device, settings, parcellation='aparc', coarsening_levels=1, test=False):
 
         self.parcellation = parcellation
         self.settings = settings
 
-        hcp_downloader = HCPDownloader(settings)
-        git_downloader = GitDownloader(settings)
-        self.loaders = [hcp_downloader, git_downloader]
+        hcp_downloader = HcpDownloader(settings)
+        dti_downloader = DtiDownloader(settings)
+        self.loaders = [hcp_downloader, dti_downloader]
 
         self.list_file = 'subjects.txt'
         if test:
@@ -151,7 +154,7 @@ class HCPDataset(torch.utils.data.Dataset):
         self.Gp = 4
         self.Gn = 4
 
-        self.transform = EncodePerm(self.H, self.Gp, self.Gn)
+        self.transform = SlidingWindow(self.H, self.Gp, self.Gn)
         self.device = device
 
     def __len__(self):
@@ -169,7 +172,7 @@ class HCPDataset(torch.utils.data.Dataset):
         ts = data['functional']['MOTOR_LR']['ts']
         S = data['adj']
 
-        if self.coarsening_levels == 1:
+        if self.coarsening_levels == 1: #TODO wrap the graph thing in a function, perhaps process_subject
             graphs = [S]
             perm = list(range(0, S.shape[0]))
         else:
@@ -178,7 +181,7 @@ class HCPDataset(torch.utils.data.Dataset):
         coos = [torch.tensor([graph.tocoo().row, graph.tocoo().col], dtype=torch.long).to(self.device) for graph in
                 graphs]
 
-        C_i = np.expand_dims(cues, 0)
+        C_i = np.expand_dims(cues, 0)   #TODO put this into transform
         X_i = np.expand_dims(ts, 0)
 
         Xw, yoh = self.transform(C_i, X_i, perm)
@@ -186,7 +189,7 @@ class HCPDataset(torch.utils.data.Dataset):
         return Xw, yoh, coos, perm
 
 
-class Encode(object):
+class Encode(object):   #TODO Delete and commit
 
     def __init__(self, H, Gp, Gn, perm):
         self.H = H
@@ -203,17 +206,17 @@ class Encode(object):
         return Xw, yoh
 
 
-class EncodePerm(object):
+class SlidingWindow(object):
 
     def __init__(self, H, Gp, Gn):
         self.H = H
         self.Gp = Gp
         self.Gn = Gn
 
-    def __call__(self, C, X, perm):
+    def __call__(self, C, X, perm): #TODO: put encode perm function here as two functions, encode_y and encode_x
         Xw, y = encode_perm(C, X, self.H, self.Gp, self.Gn, perm)
 
-        k = np.max(np.unique(y))
+        k = np.max(np.unique(y))    #TODO: move within encode_y
         yoh = one_hot(y, k + 1)
 
         return Xw, yoh
@@ -284,19 +287,11 @@ def encode_perm(C, X, H, Gp, Gn, indices):
     N = T - H + 1
     num_examples = Np * N
 
-    X = X.astype('float32')
-
     y = encode_y(C, Np, N, T, m, Gn, Gp)
-    y = np.reshape(y, (num_examples))
+    y = np.reshape(y, num_examples)
 
     X_windowed = []
-
-    # if indices is None:
-    #     for t in range(N):
-    #         X_windowed.append(X[0, :, t: t + H])  # 0 because there is always a single example in each batch
-    #
-    #     y = np.reshape(y, (num_examples))
-    # else:
+    X = X.astype('float32')
     M, Q = X[0].shape
     Mnew = len(indices)
     assert Mnew >= M
@@ -310,7 +305,7 @@ def encode_perm(C, X, H, Gp, Gn, indices):
     return [X_windowed, y]
 
 
-def perm_data_time(x, indices):
+def perm_data_time(x, indices): #TODO Delete and commit
     """
     Permute data matrix, i.e. exchange node ids,
     so that binary unions form the clustering tree.

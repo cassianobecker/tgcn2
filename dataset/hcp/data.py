@@ -14,9 +14,10 @@ from util.path import get_root
 
 
 def load_subjects(list_url):
+    #logging.info, loading subjects from + list_url
     with open(list_url, 'r') as f:
         subjects = [s.strip() for s in f.readlines()]
-
+    #logging.info, loaded len(subjects) subjects
     return subjects
 
 
@@ -26,28 +27,18 @@ def process_subject(parc, subject, tasks, loaders):
 
     data = dict()
 
-    # print('Processing subject {}'.format(subject))
+    # logging.info('Processing subject {}'.format(subject))
     task_list = dict()
 
     for task in tasks:
 
-        # print('\n--- task {} ...'.format(task))
+        # logging.info('\n--- task {} ...'.format(task))
 
         task_dict = dict()
 
         ts = get_ts(subject, task, parc, hcp_downloader)
 
-        cues = get_all_cue_times(subject, task, hcp_downloader)
-
-        cue_list = [cues['lf'], cues['lh'], cues['rf'], cues['rh'], cues['t']]
-
-        # TODO magic number
-        cue_arr = np.zeros((len(cue_list), 284), dtype=int)
-
-        for i in range(len(cue_list)):
-            limb = cue_list[i]
-            for j in limb:
-                cue_arr[i, j] = 1
+        cue_arr = get_all_cue_times(subject, task, hcp_downloader)
 
         heart, resp = get_vitals(subject, task, hcp_downloader)
 
@@ -79,7 +70,7 @@ def get_ts(subject, task, parc, settings):
 
 
 def load_ts_for_subject_task(subject, task, hcp_downloader):
-    # print("  loading time series...", end="", flush=True)
+    # logging.info("  loading time series...", end="", flush=True)
 
     fname = 'tfMRI_' + task + '_Atlas.dtseries.nii'
     furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, fname)
@@ -118,19 +109,29 @@ def get_cue_times(cue, subject, task, settings, TR):
 
 
 def get_all_cue_times(subject, task, hcp_downloader):
-    # print("  reading cue signals...", end="", flush=True)
+    # logging.info("  reading cue signals...", end="", flush=True)
 
     TR = 0.72
     cues = {cue: get_cue_times(cue, subject, task, hcp_downloader, TR) for cue in
             get_cues(subject, task, hcp_downloader)}
 
-    # print("done.")
+    cue_list = [cues['lf'], cues['lh'], cues['rf'], cues['rh'], cues['t']]
 
-    return cues
+    # TODO magic number
+    cue_arr = np.zeros((len(cue_list), 284), dtype=int)
+
+    for i in range(len(cue_list)):
+        limb = cue_list[i]
+        for j in limb:
+            cue_arr[i, j] = 1
+
+    # logging.info("Read cue signals for + subject") ##done
+
+    return cue_arr
 
 
 def get_parcellation(parc, subject, hcp_downloader):
-    # print("  reading parcellation...", end="", flush=True)
+    # logging.info("  reading parcellation...", end="", flush=True)
 
     fpath = os.path.join('HCP_1200', subject, 'MNINonLinear', 'fsaverage_LR32k')
 
@@ -152,13 +153,13 @@ def get_parcellation(parc, subject, hcp_downloader):
         parc_vector = np.array(range(n_regions))
         parc_labels = [(i, i) for i in range(n_regions)]
 
-    # print("done.")
+    # logging.info("done.")
 
     return parc_vector, parc_labels
 
 
 def parcellate(ts, parc, parc_vector, parc_labels):
-    # print("  performing parcellation...", end="", flush=True)
+    # logging.info("  performing parcellation...", end="", flush=True)
 
     tst = ts[:, :parc_vector.shape[0]]
 
@@ -175,13 +176,13 @@ def parcellate(ts, parc, parc_vector, parc_labels):
     if parc == 'dense':
         x_parc = tst.T
 
-    # print("done.")
+    # logging.info("done.")
 
     return x_parc
 
 
 def get_vitals(subject, task, hcp_downloader):
-    # print("  reading vitals...", end="", flush=True)
+    # logging.info("  reading vitals...", end="", flush=True)
 
     TR = 0.72
 
@@ -207,7 +208,7 @@ def get_vitals(subject, task, hcp_downloader):
     heart_d = scipy.signal.decimate(np.array(heart[:-1]), q, n, zero_phase=True)
     resp_d = scipy.signal.decimate(np.array(resp[:-1]), q, n, zero_phase=True)
 
-    # print("done.")
+    # logging.info("done.")
 
     return heart_d, resp_d
 
@@ -334,26 +335,26 @@ def get_adj_dti(subject, parc, git_downloader):
 
 
 def get_adj_mesh(subject, settings):
-    # print("\n--- mesh adjacency matrix...")
+    # logging.info("\n--- mesh adjacency matrix for + subject")
 
     inflation = 'inflated'  # 'white'
 
-    # print("  processing left hemisphere edges...", end="", flush=True)
+    # logging.info("  processing left hemisphere edges...", end="", flush=True)
     hemi = 'L'
     rows_L, cols_L, coords_L = get_adj_hemi(hemi, inflation, subject, settings, offset=0)
-    # print("done.")
+    # logging.info("done.")
 
-    # print("  processing right hemisphere edges...", end="", flush=True)
+    # logging.info("  processing right hemisphere edges...", end="", flush=True)
     hemi = 'R'
     rows_R, cols_R, coords_R = get_adj_hemi(hemi, inflation, subject, settings, offset=0)
-    # print("done.")
+    # logging.info("done.")
 
-    # print("  processing coordinates...", end="", flush=True)
+    # logging.info("  processing coordinates...", end="", flush=True)
     data = np.ones(len(rows_L) + len(rows_R))
     A = scipy.sparse.coo_matrix((data, (rows_L + rows_R, cols_L + cols_R)))
     coords = np.vstack((coords_L, coords_R))
     new_coords = filter_surf_vertices(coords)
-    # print("done.")
+    # logging.info("done.")
 
     return A, new_coords
 
