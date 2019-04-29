@@ -163,59 +163,78 @@ class SlidingWindow(object):
         self.Gp = Gp
         self.Gn = Gn
 
+
     def __call__(self, C, X, perm): #TODO: put encode perm function here as two functions, encode_y and encode_x
-        Xw, y = encode_perm(C, X, self.H, self.Gp, self.Gn, perm)
 
-        k = np.max(np.unique(y))    #TODO: move within encode_y
-        yoh = one_hot(y, k + 1)
+        def encode_y(C, Np, N, T, m, Gn, Gp):
+            """
+            Encodes the target signal to account for windowing
+            :param C: targets
+            :param Np: number of examples
+            :param N: length of windowed time signal
+            :param T: length of original time signal
+            :param m: number of classes
+            :param Gn: front guard length
+            :param Gp: back guard length
+            :return: y: encoded target signal
+            """
+            y = np.zeros([Np, N])
+            C_temp = np.zeros(T)
+            num_examples = Np * N
 
-        return Xw, yoh
+            for i in range(Np):
+                for j in range(m):
+                    temp_idx = [idx for idx, e in enumerate(C[i, j, :]) if e == 1]
+                    cue_idx1 = [idx - Gn for idx in temp_idx]
+                    cue_idx2 = [idx + Gp for idx in temp_idx]
+                    cue_idx = list(zip(cue_idx1, cue_idx2))
+
+                    for idx in cue_idx:
+                        C_temp[slice(*idx)] = j + 1
+
+                y[i, :] = C_temp[0: N]
+
+            y = np.reshape(y, num_examples)
+            k = np.max(np.unique(y))  # TODO: move within encode_y
+            yoh = one_hot(y, k + 1)
+
+            return yoh
+
+        def pad(X, Mnew, M):
+            """
+            Pads the data with zeros to account for dummy nodes
+            :param X: fMRI data
+            :param Mnew: number of nodes in graph (w/ dummies)
+            :param M: number of nodes in the original graph (w/o dummies)
+            :return: padded data
+            """
+            diff = Mnew - M
+            z = np.zeros((X.shape[0], diff, X.shape[2]), dtype="float32")
+            X = np.concatenate((X, z), axis=1)
+            return X
+
+        _, m, _ = C.shape
+        Np, p, T = X.shape
+        N = T - self.H + 1
+
+        yoh = encode_y(C, Np, N, T, m, self.Gn, self.Gp)
+
+        X_windowed = []
+        X = X.astype('float32')
+        M, Q = X[0].shape
+        Mnew = len(perm)
+        assert Mnew >= M
+
+        if Mnew > M:
+            X = pad(X)
+
+        for t in range(N):
+            X_windowed.append(X[0, perm, t: t + self.H])  # reorder the nodes based on perm order
+
+        return X_windowed, yoh
 
 
 ###################### THESE FUNCTIONS NEED TO BE EXPLAINED #####################
-
-def encode_y(C, Np, N, T, m, Gn, Gp):
-    """
-    Encodes the target signal to account for windowing
-    :param C: targets
-    :param Np: number of examples
-    :param N: length of windowed time signal
-    :param T: length of original time signal
-    :param m: number of classes
-    :param Gn: front guard length
-    :param Gp: back guard length
-    :return: y: encoded target signal
-    """
-    y = np.zeros([Np, N])
-    C_temp = np.zeros(T)
-
-    for i in range(Np):
-        for j in range(m):
-            temp_idx = [idx for idx, e in enumerate(C[i, j, :]) if e == 1]
-            cue_idx1 = [idx - Gn for idx in temp_idx]
-            cue_idx2 = [idx + Gp for idx in temp_idx]
-            cue_idx = list(zip(cue_idx1, cue_idx2))
-
-            for idx in cue_idx:
-                C_temp[slice(*idx)] = j + 1
-
-        y[i, :] = C_temp[0: N]
-
-    return y
-
-
-def pad(X, Mnew, M):
-    """
-    Pads the data with zeros to account for dummy nodes
-    :param X: fMRI data
-    :param Mnew: number of nodes in graph (w/ dummies)
-    :param M: number of nodes in the original graph (w/o dummies)
-    :return: padded data
-    """
-    diff = Mnew - M
-    z = np.zeros((X.shape[0], diff, X.shape[2]), dtype="float32")
-    X = np.concatenate((X, z), axis=1)
-    return X
 
 
 # TODO can't these functions reuse from (a generalized) data.encode?
@@ -232,24 +251,4 @@ def encode_perm(C, X, H, Gp, Gn, indices):
     :param indices: ordering of graph vertices
     :return: X_windowed, y: encoded time signal and target classes
     """
-    _, m, _ = C.shape
-    Np, p, T = X.shape
-    N = T - H + 1
-    num_examples = Np * N
 
-    y = encode_y(C, Np, N, T, m, Gn, Gp)
-    y = np.reshape(y, num_examples)
-
-    X_windowed = []
-    X = X.astype('float32')
-    M, Q = X[0].shape
-    Mnew = len(indices)
-    assert Mnew >= M
-
-    if Mnew > M:
-        X = pad(X)
-
-    for t in range(N):
-        X_windowed.append(X[0, indices, t: t + H])  # reorder the nodes based on perm order
-
-    return [X_windowed, y]
