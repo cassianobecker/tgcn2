@@ -16,14 +16,41 @@ from dataset.hcp.matlab_data import get_cues, get_bold, load_structural, encode
 from dataset.hcp.downloaders import DtiDownloader, HcpDownloader
 
 
-def loaders(device, batch_size=1):
+def get_settings():
     settings = configparser.ConfigParser()
     settings_dir = os.path.join(get_root(), 'dataset', 'hcp', 'res', 'hcp_database.ini')
     settings.read(settings_dir)
+    return settings
 
+
+def get_params():
     params = configparser.ConfigParser()
     params_dir = os.path.join(get_root(), 'dataset', 'hcp', 'res', 'hcp_experiment.ini')
     params.read(params_dir)
+    return params
+
+
+def set_logger(name, level):
+    logger = logging.getLogger(name)
+    level_dict = {
+        'debug': logging.DEBUG,
+        'info': logging.INFO,
+        'warning': logging.WARNING,
+        'error': logging.ERROR,
+        'critical': logging.CRITICAL
+    }
+    logger.setLevel(level_dict[level])
+    log_stream = logging.StreamHandler()
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    log_stream.setLevel(level_dict[level])
+    log_stream.setFormatter(formatter)
+    logger.addHandler(log_stream)
+    return logger
+
+
+def loaders(device, batch_size=1):
+    settings = get_settings()
+    params = get_params()
 
     train_set = HcpDataset(device, settings, params, test=False)
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=False)
@@ -106,21 +133,7 @@ class HcpDataset(torch.utils.data.Dataset):
         else:
             list_url = os.path.join(get_root(), 'conf/hcp/train/motor_lr', self.list_file)
 
-        self.logger = logging.getLogger('HCP_Dataset')
-        level = settings['LOGGING']['dataloader_logging_level']
-        level_dict = {
-            'debug': logging.DEBUG,
-            'info': logging.INFO,
-            'warning': logging.WARNING,
-            'error': logging.ERROR,
-            'critical': logging.CRITICAL
-        }
-        self.logger.setLevel(level_dict[level])
-        log_stream = logging.StreamHandler()
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        log_stream.setLevel(level_dict[level])
-        log_stream.setFormatter(formatter)
-        self.logger.addHandler(log_stream)
+        self.logger = set_logger('HCP_Dataset', settings['LOGGING']['dataloader_logging_level'])
 
         self.subjects = load_subjects(list_url)
 

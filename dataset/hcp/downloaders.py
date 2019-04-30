@@ -4,8 +4,12 @@ import logging
 
 
 class HcpDownloader:
-
-    def __init__(self, settings, test):
+    """
+    Enables downloading patient files from the HCP database through HTTP get requests if they are unavailable locally.
+    :param settings: configparser that contains server, directory and credential info and logging levels
+    :param test: Boolean to differentiate the loggers for training and test sets
+    """
+    def __init__(self, settings, test): #TODO import set_logger() from torch_data.p
         self.settings = settings
         if test:
             self.logger = logging.getLogger('HCP_Test_Downloader')
@@ -27,6 +31,11 @@ class HcpDownloader:
         self.logger.addHandler(log_stream)
 
     def load(self, path):
+        """
+        Checks for file in the specified path. If file is unavailable, downloads it from the HCP database.
+        :param path: local path to check for file and download to if unavailable
+        :return: None
+        """
         path = os.path.join(self.settings['DIRECTORIES']['local_server_directory'], path)
         if os.path.isfile(path):
             self.logger.debug("File found in: " + path)
@@ -54,7 +63,11 @@ class HcpDownloader:
 
 
 class DtiDownloader:
-
+    """
+    Enables downloading DTI files from a web repository through HTTP get requests if they are unavailable locally.
+    :param settings: configparser that contains server, directory and credential info and logging levels
+    :param test: Boolean to differentiate the loggers for training and test sets
+    """
     def __init__(self, settings, test):
         self.base_path = settings['SERVERS']['dti_server_url']
         self.local_path = settings['DIRECTORIES']['local_server_directory']
@@ -78,6 +91,11 @@ class DtiDownloader:
         self.logger.addHandler(log_stream)
 
     def load(self, path):
+        """
+        Checks for file in the specified path. If file is unavailable, downloads it from the HCP database.
+        :param path: local path to check for file and download to if unavailable
+        :return: None
+        """
         path = os.path.join(self.local_path, path)
         if os.path.isfile(path):
             self.logger.debug("File found in: " + path)
