@@ -17,6 +17,10 @@ from dataset.hcp.downloaders import DtiDownloader, HcpDownloader
 
 
 def get_settings():
+    """
+    Creates a ConfigParser object with server/directory/credentials/logging info from preconfigured directory.
+    :return: settings, a ConfigParser object
+    """
     settings = configparser.ConfigParser()
     settings_dir = os.path.join(get_root(), 'dataset', 'hcp', 'res', 'hcp_database.ini')
     settings.read(settings_dir)
@@ -24,6 +28,10 @@ def get_settings():
 
 
 def get_params():
+    """
+    Creates a ConfigParser object with parameter info for reading fMRI data.
+    :return: params, a ConfigParser object
+    """
     params = configparser.ConfigParser()
     params_dir = os.path.join(get_root(), 'dataset', 'hcp', 'res', 'hcp_experiment.ini')
     params.read(params_dir)
@@ -59,61 +67,6 @@ def loaders(device, batch_size=1):
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
 
     return train_loader, test_loader
-
-
-class StreamMatlabDataset(torch.utils.data.Dataset):
-
-    def __init__(self):
-        normalized_laplacian = True
-        coarsening_levels = 4
-
-        list_file = 'subjects_inter.txt'
-        list_url = os.path.join(get_root(), 'conf', list_file)
-        subjects_strut = load_subjects(list_url)
-
-        structural_file = 'struct_dti.mat'
-        structural_url = os.path.join(get_root(), 'load', 'hcpdata', structural_file)
-        S = load_structural(subjects_strut, structural_url)
-        S = S[0]
-
-        # avg_degree = 7
-        # S = scipy.sparse.random(65000, 65000, density=avg_degree/65000, format="csr")
-
-        self.graphs, self.perm = coarsening.coarsen(S, levels=coarsening_levels, self_connections=False)
-
-        self.list_file = 'subjects_hcp_all.txt'
-        list_url = os.path.join(get_root(), 'conf', self.list_file)
-        self.data_path = os.path.join(os.path.expanduser("~"), 'data_full')
-
-        self.subjects = load_subjects(list_url)
-        post_fix = '_aparc_tasks_aparc.mat'
-        self.filenames = [s + post_fix for s in self.subjects]
-
-        self.session = 'MOTOR_LR'
-
-        self.transform = SlidingWindow(15, 4, 4)
-
-    def get_graphs(self, device):
-        coos = [torch.tensor([graph.tocoo().row, graph.tocoo().col], dtype=torch.long).to(device) for graph in
-                self.graphs]
-        return self.graphs, coos, self.perm
-
-    def __len__(self):
-        return len(self.filenames)
-
-    def __getitem__(self, idx):
-        file = os.path.join(self.data_path, self.filenames[idx])
-        ds = sio.loadmat(file).get('ds')
-        MOTOR = ds[0, 0][self.session]
-
-        C_i = np.expand_dims(get_cues(MOTOR), 0)
-        X_i = np.expand_dims(get_bold(MOTOR).transpose(), 0)
-
-        # X_i = np.random.rand(1, 65000, 284)
-
-        Xw, yoh = self.transform(C_i, X_i, self.perm)
-
-        return Xw, yoh
 
 
 class HcpDataset(torch.utils.data.Dataset):
