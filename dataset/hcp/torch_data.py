@@ -39,6 +39,12 @@ def get_params():
 
 
 def set_logger(name, level):
+    """
+    Creates/retrieves a Logger object with the desired name and level.
+    :param name: Name of logger
+    :param level: Level of logger
+    :return: logger, the configured Logger object
+    """
     logger = logging.getLogger(name)
     level_dict = {
         'debug': logging.DEBUG,
@@ -57,6 +63,12 @@ def set_logger(name, level):
 
 
 def loaders(device, batch_size=1):
+    """
+    Creates train and test datasets and places them in a DataLoader to iterate over.
+    :param device: device to send the dataset to
+    :param batch_size: fixed at 1 for memory efficiency
+    :return: train_loader and test_loader, DataLoaders for the respective datasets
+    """
     settings = get_settings()
     params = get_params()
 
@@ -70,6 +82,14 @@ def loaders(device, batch_size=1):
 
 
 class HcpDataset(torch.utils.data.Dataset):
+    """
+    A PyTorch Dataset to host and process the BOLD signal and the associated motor tasks
+    :param device: the device to send the dataset to
+    :param settings: ConfigParser that contains server, directory and credential info and logging levels
+    :param params: parameters for processing fMRI data
+    :param coarsening_levels: level of coarsening to be applied to graph
+    :param test: boolean that allows differentiating the train/test urls to pull data from
+    """
 
     def __init__(self, device, settings, params, coarsening_levels=1, test=False):
 
@@ -105,9 +125,6 @@ class HcpDataset(torch.utils.data.Dataset):
         return len(self.subjects)
 
     def __getitem__(self, idx):
-
-        # file = os.path.join(self.data_path, self.subjects[idx])
-
         subject = self.subjects[idx]
 
         data = process_subject(self.params, subject, [self.session], self.loaders)
@@ -131,6 +148,12 @@ class HcpDataset(torch.utils.data.Dataset):
 
 
 class SlidingWindow(object):
+    """
+    Applies a sliding window to the BOLD time signal and designates a motor task to each window
+    :param H: length of sliding window/horizon
+    :param Gp: front guard size
+    :param Gn: back guard size
+    """
 
     def __init__(self, H, Gp, Gn):
         self.H = H
@@ -173,7 +196,12 @@ class SlidingWindow(object):
 
             return yoh
 
-        def encode_x(X):
+        def encode_X(X):
+            """
+            Provides a list of memory-efficient windowed views into the BOLD time signal.
+            :param X: Signal to be encoded
+            :return: X_windowed, the list of windowed views
+            """
             X_windowed = []
             X = X.astype('float32')
             M, Q = X[0].shape
@@ -210,6 +238,6 @@ class SlidingWindow(object):
 
         yoh = encode_y(C, Np, N, T, m, self.Gn, self.Gp)
 
-        X_windowed = encode_x(X)
+        X_windowed = encode_X(X)
 
         return X_windowed, yoh

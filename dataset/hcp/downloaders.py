@@ -6,8 +6,8 @@ import logging
 class HcpDownloader:
     """
     Enables downloading patient files from the HCP database through HTTP get requests if they are unavailable locally.
-    :param settings: configparser that contains server, directory and credential info and logging levels
-    :param test: Boolean to differentiate the loggers for training and test sets
+    :param settings: ConfigParser that contains server, directory and credential info and logging levels
+    :param test: boolean to differentiate the loggers for training and test sets
     """
     def __init__(self, settings, test): #TODO import set_logger() from torch_data.p
         self.settings = settings
