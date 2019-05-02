@@ -4,7 +4,6 @@ import configparser
 import logging
 
 import numpy as np
-import scipy.io as sio
 
 from util.path import get_root
 import ext.gcn.coarsening as coarsening
@@ -12,7 +11,6 @@ import ext.gcn.coarsening as coarsening
 from util.encode import one_hot
 
 from dataset.hcp.data import load_subjects, process_subject
-from dataset.hcp.matlab_data import get_cues, get_bold, load_structural, encode
 from dataset.hcp.downloaders import DtiDownloader, HcpDownloader
 
 
@@ -162,27 +160,26 @@ class SlidingWindow(object):
 
     def __call__(self, cues, ts, perm):
 
-        def encode_y(C, Np, N, T, m, Gn, Gp):
+        def encode_y(C, X_shape):
             """
             Encodes the target signal to account for windowing
             :param C: targets
-            :param Np: number of examples
-            :param N: length of windowed time signal
-            :param T: length of original time signal
-            :param m: number of classes
-            :param Gn: front guard length
-            :param Gp: back guard length
+            :param X_shape: shape of BOLD data (# examples, # parcels, # time samples)
             :return: y: encoded target signal
             """
+            Np, p, T = X_shape
+            N = T - self.H + 1
+
             y = np.zeros([Np, N])
             C_temp = np.zeros(T)
             num_examples = Np * N
+            m = C.shape[1]
 
             for i in range(Np):
                 for j in range(m):
                     temp_idx = [idx for idx, e in enumerate(C[i, j, :]) if e == 1]
-                    cue_idx1 = [idx - Gn for idx in temp_idx]
-                    cue_idx2 = [idx + Gp for idx in temp_idx]
+                    cue_idx1 = [idx - self.Gn for idx in temp_idx]
+                    cue_idx2 = [idx + self.Gp for idx in temp_idx]
                     cue_idx = list(zip(cue_idx1, cue_idx2))
 
                     for idx in cue_idx:
@@ -202,13 +199,16 @@ class SlidingWindow(object):
             :param X: Signal to be encoded
             :return: X_windowed, the list of windowed views
             """
+
             X_windowed = []
             X = X.astype('float32')
-            M, Q = X[0].shape
-            Mnew = len(perm)
-            assert Mnew >= M
+            p, T = X[0].shape
+            N = T - self.H + 1
 
-            if Mnew > M:
+            p_new = len(perm)
+            assert p_new >= p
+
+            if p_new > p:
                 X = pad(X)
 
             for t in range(N):
@@ -232,11 +232,7 @@ class SlidingWindow(object):
         C = np.expand_dims(cues, 0)
         X = np.expand_dims(ts, 0)
 
-        _, m, _ = C.shape
-        Np, p, T = X.shape
-        N = T - self.H + 1
-
-        yoh = encode_y(C, Np, N, T, m, self.Gn, self.Gp)
+        yoh = encode_y(C, X.shape)
 
         X_windowed = encode_X(X)
 
