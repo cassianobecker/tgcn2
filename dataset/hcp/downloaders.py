@@ -2,6 +2,8 @@ import os
 import requests
 import logging
 
+from util.logging import set_logger
+
 
 class HcpDownloader:
     """
@@ -9,26 +11,12 @@ class HcpDownloader:
     :param settings: ConfigParser that contains server, directory and credential info and logging levels
     :param test: boolean to differentiate the loggers for training and test sets
     """
-    def __init__(self, settings, test): #TODO import set_logger() from torch_data.p
+    def __init__(self, settings, test):
         self.settings = settings
         if test:
-            self.logger = logging.getLogger('HCP_Test_Downloader')
+            self.logger = set_logger('HCP_Test_Downloader', settings['LOGGING']['downloader_logging_level'])
         else:
-            self.logger = logging.getLogger('HCP_Train_Downloader')
-        level = settings['LOGGING']['downloader_logging_level']
-        level_dict = {
-            'debug': logging.DEBUG,
-            'info': logging.INFO,
-            'warning': logging.WARNING,
-            'error': logging.ERROR,
-            'critical': logging.CRITICAL
-        }
-        self.logger.setLevel(level_dict[level])
-        log_stream = logging.StreamHandler()
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        log_stream.setLevel(level_dict[level])
-        log_stream.setFormatter(formatter)
-        self.logger.addHandler(log_stream)
+            self.logger = set_logger('HCP_Train_Downloader', settings['LOGGING']['downloader_logging_level'])
 
     def load(self, path):
         """
@@ -72,23 +60,9 @@ class DtiDownloader:
         self.base_path = settings['SERVERS']['dti_server_url']
         self.local_path = settings['DIRECTORIES']['local_server_directory']
         if test:
-            self.logger = logging.getLogger('Dti_Test_Downloader')
+            self.logger = set_logger('Dti_Test_Downloader', settings['LOGGING']['downloader_logging_level'])
         else:
-            self.logger = logging.getLogger('Dti_Train_Downloader')
-        level = settings['LOGGING']['downloader_logging_level']
-        level_dict = {
-            'debug': logging.DEBUG,
-            'info': logging.INFO,
-            'warning': logging.WARNING,
-            'error': logging.ERROR,
-            'critical': logging.CRITICAL
-        }
-        self.logger.setLevel(level_dict[level])
-        log_stream = logging.StreamHandler()
-        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-        log_stream.setLevel(level_dict[level])
-        log_stream.setFormatter(formatter)
-        self.logger.addHandler(log_stream)
+            self.logger = set_logger('Dti_Train_Downloader', settings['LOGGING']['downloader_logging_level'])
 
     def load(self, path):
         """

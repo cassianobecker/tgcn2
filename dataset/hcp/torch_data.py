@@ -1,7 +1,6 @@
 import os
 import torch
 import configparser
-import logging
 
 import numpy as np
 
@@ -9,6 +8,7 @@ from util.path import get_root
 import ext.gcn.coarsening as coarsening
 
 from util.encode import one_hot
+from util.logging import set_logger
 
 from dataset.hcp.data import load_subjects, process_subject
 from dataset.hcp.downloaders import DtiDownloader, HcpDownloader
@@ -20,7 +20,7 @@ def get_settings():
     :return: settings, a ConfigParser object
     """
     settings = configparser.ConfigParser()
-    settings_dir = os.path.join(get_root(), 'dataset', 'hcp', 'res', 'hcp_database.ini')
+    settings_dir = os.path.join(get_root(), 'dataset', 'hcp', 'conf', 'hcp_database.ini')
     settings.read(settings_dir)
     return settings
 
@@ -31,33 +31,9 @@ def get_params():
     :return: params, a ConfigParser object
     """
     params = configparser.ConfigParser()
-    params_dir = os.path.join(get_root(), 'dataset', 'hcp', 'res', 'hcp_experiment.ini')
+    params_dir = os.path.join(get_root(), 'dataset', 'hcp', 'conf', 'hcp_experiment.ini')
     params.read(params_dir)
     return params
-
-
-def set_logger(name, level):
-    """
-    Creates/retrieves a Logger object with the desired name and level.
-    :param name: Name of logger
-    :param level: Level of logger
-    :return: logger, the configured Logger object
-    """
-    logger = logging.getLogger(name)
-    level_dict = {
-        'debug': logging.DEBUG,
-        'info': logging.INFO,
-        'warning': logging.WARNING,
-        'error': logging.ERROR,
-        'critical': logging.CRITICAL
-    }
-    logger.setLevel(level_dict[level])
-    log_stream = logging.StreamHandler()
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    log_stream.setLevel(level_dict[level])
-    log_stream.setFormatter(formatter)
-    logger.addHandler(log_stream)
-    return logger
 
 
 def loaders(device, batch_size=1):
