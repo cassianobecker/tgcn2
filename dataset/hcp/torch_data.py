@@ -4,6 +4,8 @@ import configparser
 
 import numpy as np
 
+import nibabel.imageglobals as imageglobals
+
 from util.path import get_root
 import ext.gcn.coarsening as coarsening
 
@@ -43,8 +45,17 @@ def loaders(device, batch_size=1):
     :param batch_size: fixed at 1 for memory efficiency
     :return: train_loader and test_loader, DataLoaders for the respective datasets
     """
+    size_dict = {
+        'aparc': 148,
+        'dense': 59412
+    }
+
     settings = get_settings()
     params = get_params()
+    parc = params['PARCELLATION']['parcellation']
+    mat_size = size_dict[parc]
+
+    imageglobals.logger = set_logger('Nibabel', settings['LOGGING']['nibabel_logging_level'])
 
     train_set = HcpDataset(device, settings, params, test=False)
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=False)
@@ -52,7 +63,7 @@ def loaders(device, batch_size=1):
     test_set = HcpDataset(device, settings, params, test=True)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
 
-    return train_loader, test_loader
+    return train_loader, test_loader, mat_size
 
 
 class HcpDataset(torch.utils.data.Dataset):
