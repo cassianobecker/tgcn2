@@ -1,6 +1,5 @@
 from __future__ import print_function
 import argparse
-import time
 import random
 import os
 
@@ -10,9 +9,8 @@ import torch
 import torch.utils.data
 import torch.nn.functional as F
 import torch.optim as optim
-import nibabel.imageglobals as imageglobals
 
-from dataset.hcp.torch_data import loaders, get_settings, set_logger
+from dataset.hcp.torch_data import loaders
 from nn.chebnet import ChebTimeConv
 
 
@@ -174,8 +172,6 @@ def experiment(args):
     :param args: keyword arguments from main() as parameters for the experiment
     :return: None
     """
-    settings = get_settings()
-    imageglobals.logger = set_logger('Nibabel', settings['LOGGING']['nibabel_logging_level'])
 
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
