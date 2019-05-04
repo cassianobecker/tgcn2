@@ -36,11 +36,13 @@ def get_params():
     return params
 
 
-def loaders(device, batch_size=1):
+def loaders(device, batch_size=1, download_train=True, download_test=True):
     """
     Creates train and test datasets and places them in a DataLoader to iterate over.
     :param device: device to send the dataset to
     :param batch_size: fixed at 1 for memory efficiency
+    :param download_train: whether to attempt downloading training data, set to False if data available locally
+    :param download_test: whether to attempt downloading test data, set to False if data available locally
     :return: train_loader and test_loader, DataLoaders for the respective datasets
     """
     settings = get_settings()
@@ -51,6 +53,11 @@ def loaders(device, batch_size=1):
 
     test_set = HcpDataset(device, settings, params, test=True)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
+
+    if download_train:
+        train_set.download_all()
+    if download_test:
+        test_set.download_all()
 
     return train_loader, test_loader
 
@@ -70,9 +77,9 @@ class HcpDataset(torch.utils.data.Dataset):
         self.params = params
         self.settings = settings
 
-        hcp_downloader = HcpDownloader(settings, test)
-        dti_downloader = DtiDownloader(settings, test)
-        self.loaders = {'hcp_downloader': hcp_downloader, 'dti_downloader': dti_downloader}
+        self.hcp_downloader = HcpDownloader(settings, test)
+        self.dti_downloader = DtiDownloader(settings, test)
+        self.loaders = {'hcp_downloader': self.hcp_downloader, 'dti_downloader': self.dti_downloader}
 
         self.list_file = 'subjects.txt'
         if test:
@@ -120,6 +127,47 @@ class HcpDataset(torch.utils.data.Dataset):
 
         return Xw, yoh, coos, perm
 
+    def download_all(self):
+        for subject in self.subjects:
+
+            for task in [self.session]:
+                fname = 'tfMRI_' + task + '_Atlas.dtseries.nii'
+                furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, fname)
+                self.hcp_downloader.load(furl)
+
+                furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, 'EVs')
+                files = ['cue.txt', 'lf.txt', 'lh.txt', 'rf.txt', 'rh.txt', 't.txt']
+
+                for file in files:
+                    new_path = os.path.join(furl, file)
+                    self.hcp_downloader.load(new_path)
+
+                parc = self.params['PARCELLATION']['parcellation']
+                fpath = os.path.join('HCP_1200', subject, 'MNINonLinear', 'fsaverage_LR32k')
+                suffixes = {'aparc': '.aparc.a2009s.32k_fs_LR.dlabel.nii',
+                            'dense': '.aparc.a2009s.32k_fs_LR.dlabel.nii'}
+                parc_furl = os.path.join(fpath, subject + suffixes[parc])
+                self.hcp_downloader.load(parc_furl)
+
+                fname = 'tfMRI_' + task + '_Physio_log.txt'
+                furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, fname)
+                self.hcp_downloader.load(furl)
+
+                inflation = 'inflated'
+                hemis = ['L', 'R']
+                for hemi in hemis:
+                    fname = subject + '.' + hemi + '.' + inflation + '.32k_fs_LR.surf.gii'
+                    furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'fsaverage_LR32k', fname)
+                    self.hcp_downloader.load(furl)
+
+                furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'dMRI_CONN')
+                file = furl + '/' + subject + '.aparc.a2009s.dti.conn.mat'
+
+                if subject in self.dti_downloader.whitelist:
+                    self.dti_downloader.load(file)
+
+        self.logger.info("Downloading All patient data: Completed")
+
 
 class SlidingWindow(object):
     """
@@ -153,13 +201,13 @@ class SlidingWindow(object):
 
             for i in range(Np):
                 for j in range(m):
-                    temp_idx = [idx for idx, e in enumerate(C[i, j, :]) if e == 1]
-                    cue_idx1 = [idx - self.Gn for idx in temp_idx]
-                    cue_idx2 = [idx + self.Gp for idx in temp_idx]
-                    cue_idx = list(zip(cue_idx1, cue_idx2))
+                    temp_idx = [idx for idx, e in enumerate(C[i, j, :]) if e == 1]      # find indices in the original signal with the task
+                    cue_idx1 = [idx - self.Gn for idx in temp_idx]      # starting indices of the task in the new signal (calculated with guards)
+                    cue_idx2 = [idx + self.Gp for idx in temp_idx]      # ending indices of the task in the new signal (calculated with guards)
+                    cue_idx = list(zip(cue_idx1, cue_idx2))             # pair the tuples to form intervals to assign to specific motor task
 
                     for idx in cue_idx:
-                        C_temp[slice(*idx)] = j + 1
+                        C_temp[slice(*idx)] = j + 1                     # assign task to specified interval
 
                 y[i, :] = C_temp[0: N]
 
@@ -176,10 +224,10 @@ class SlidingWindow(object):
             :return: X_windowed, the list of windowed views
             """
 
-            X_windowed = []
+            X_windowed = []     # we store the views into the signal in a list
             X = X.astype('float32')
             p, T = X[0].shape
-            N = T - self.H + 1
+            N = T - self.H + 1      # resulting time signal will have (time_dimension - window_length + 1) time steps
 
             p_new = len(perm)
             assert p_new >= p

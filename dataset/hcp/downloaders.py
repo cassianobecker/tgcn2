@@ -1,8 +1,22 @@
 import os
 import requests
-import logging
+from urllib3.util.retry import Retry
+from requests.adapters import HTTPAdapter
 
 from util.logging import set_logger
+from util.path import get_root
+
+
+def retry_session(retries=5):
+    session = requests.Session()
+    retries = Retry(total=retries,
+                backoff_factor=0.3,
+                status_forcelist=[500, 502, 503, 504],
+                method_whitelist=frozenset(['GET', 'POST']))
+
+    session.mount('https://', HTTPAdapter(max_retries=retries))
+    session.mount('http://', HTTPAdapter(max_retries=retries))
+    return session
 
 
 class HcpDownloader:
@@ -29,7 +43,7 @@ class HcpDownloader:
             self.logger.debug("File found in: " + path)
         else:
             self.logger.info("File not found in: " + path)
-            subject = path.split('/')[3]
+            subject = path.split('/')[5]
             key = path.split('/MNINonLinear/')[1]
             url = self.settings['SERVERS']['hcp_server_url'].format(subject, subject, subject) + key
             self.logger.info("Remote download from server: " + url)
@@ -47,7 +61,18 @@ class HcpDownloader:
                     f.write(r.content)
                     self.logger.debug("Writing to " + path + 'completed')
             else:
-                self.logger.error("Request unsuccessful: Error " + r.status_code)
+                session = retry_session(retries=5)
+                r = session.get(url,
+                                auth=(self.settings['CREDENTIALS']['hcp_server_username'],
+                                      self.settings['CREDENTIALS']['hcp_server_password']), stream=True)
+                if r.status_code == 200:
+                    os.makedirs(os.path.dirname(path), exist_ok=True)
+                    with open(path, 'wb') as f:
+                        self.logger.debug("Writing to path: " + path)
+                        f.write(r.content)
+                        self.logger.debug("Writing to " + path + 'completed')
+                else:
+                    self.logger.error("Request unsuccessful: Error " + str(r.status_code))
 
 
 class DtiDownloader:
@@ -59,6 +84,8 @@ class DtiDownloader:
     def __init__(self, settings, test):
         self.base_path = settings['SERVERS']['dti_server_url']
         self.local_path = settings['DIRECTORIES']['local_server_directory']
+        whitelist_path = os.path.join(get_root(), settings['DIRECTORIES']['local_whitelist_directory'])
+        self.whitelist = [line.rstrip('\n') for line in open(whitelist_path)]
         if test:
             self.logger = set_logger('Dti_Test_Downloader', settings['LOGGING']['downloader_logging_level'])
         else:
@@ -75,7 +102,8 @@ class DtiDownloader:
             self.logger.debug("File found in: " + path)
         else:
             self.logger.info("File not found in: " + path)
-            subject = path.split('/')[3]
+            subject = path.split('/')[5]
+
             key = path.split('/MNINonLinear/')[1]
             temp = key.split('/', 1)
             key = temp[0] + '/' + subject + '/' + temp[1]
@@ -89,4 +117,4 @@ class DtiDownloader:
                     f.write(r.content)
                     self.logger.debug("Writing to " + path + 'completed')
             else:
-                self.logger.error("Request unsuccessful: Error " + r.status_code)
+                self.logger.error("DTI request unsuccessful: Error " + str(r.status_code))
