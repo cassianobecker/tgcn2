@@ -1,5 +1,4 @@
 import os
-import warnings
 import logging
 
 import nibabel as nib
@@ -45,12 +44,18 @@ def process_subject(params, subject, tasks, loaders):
 
         cue_arr = get_all_cue_times(subject, task, hcp_downloader, tr, ts.shape[1])
 
-        heart, resp = get_vitals(subject, task, hcp_downloader, tr, physio_sampling_rate)
-
         task_dict['ts'] = ts
         task_dict['cues'] = cue_arr
-        task_dict['heart'] = heart
-        task_dict['resp'] = resp
+
+        if params['FMRI']['regress_physio']:
+            try:
+                heart, resp = get_vitals(subject, task, hcp_downloader, tr, physio_sampling_rate)
+
+                task_dict['heart'] = heart
+                task_dict['resp'] = resp
+            except:
+                logger.warning('Patient ' + subject + ' doesnt have physio information, skipping')
+                #TODO: Remove subject from list
 
         task_list[task] = task_dict
 
@@ -82,11 +87,12 @@ def load_ts_for_subject_task(subject, task, hcp_downloader):
     furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, fname)
 
     hcp_downloader.load(furl)
+
     try:
         furl = os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], furl)
         ts = np.array(nib.load(furl).get_data())
     except:
-        logger.error("File " + furl + " not found")
+        logger.error("File " + furl + " not found, skipping patient.")
         exit(-1)    # TODO: Fix while resolving issue #2
 
     logger.debug("Done")
@@ -107,7 +113,7 @@ def get_cues(subject, task, hcp_downloader):
     try:
         cues = [file.split('.')[0] for file in files if file != 'Sync.txt']
     except:
-        logger.error("File " + file + " not found")
+        logger.error("File " + files + " not found")
 
     return cues
 
@@ -152,8 +158,8 @@ def get_parcellation(parc, subject, hcp_downloader):
                 'dense': '.aparc.a2009s.32k_fs_LR.dlabel.nii'}
 
     parc_furl = os.path.join(fpath, subject + suffixes[parc])
-
     hcp_downloader.load(parc_furl)
+
     try:
         parc_obj = nib.load(os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], parc_furl))
     except:
@@ -311,6 +317,7 @@ def get_adj_hemi(hemi, inflation, subject, hcp_downloader, offset):
     furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'fsaverage_LR32k', fname)
 
     hcp_downloader.load(furl)
+
     try:
         img = nib.load(os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], furl))
     except:
@@ -340,20 +347,31 @@ def get_adj_dti(subject, parc, dti_downloader):
     furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'dMRI_CONN')
     file = furl + '/' + subject + '.aparc.a2009s.dti.conn.mat'
 
-    dti_downloader.load(file)
+    if subject in dti_downloader.whitelist:
+        dti_downloader.load(file)
+        try:
+            S = sio.loadmat(os.path.join(dti_downloader.local_path, file))
+            S = S.get('S')
+        except:
+            file_dir = os.path.join(get_root(), 'dataset/hcp/res/average1.aparc.a2009s.dti.conn.mat')
+            try:
+                S = sio.loadmat(file_dir).get('S')
+            except:
+                logger.error("File " + file_dir + " not found")
+                exit(-1)    # TODO: Fix with issue #2
+            logger.warning(
+                "Local DTI adjacency matrix for subject: " + subject + " in parcellation: " + parc + " not available, using average adjacency matrix.")
+            # TODO: why is it not formatting the logger output correctly
 
-    try:
-        S = sio.loadmat(os.path.join(dti_downloader.local_path, file))
-        S = S.get('S')
-    except:
-        file_dir = os.path.join(get_root(), 'load/res/average1.aparc.a2009s.dti.conn.mat')
+    else:
+        file_dir = os.path.join(get_root(), 'dataset/hcp/res/average1.aparc.a2009s.dti.conn.mat')
         try:
             S = sio.loadmat(file_dir).get('S')
         except:
             logger.error("File " + file_dir + " not found")
-            exit(-1)    # TODO: Fix with issue #2
-        warnings.warn(
-            "Local DTI adjacency matrix for subject: <subject> in parcellation:<parcellation>  not available, using average adjacency matrix.")
+            exit(-1)  # TODO: Fix with issue #2
+        logger.warning(
+            "Local DTI adjacency matrix for subject: " + subject + " in parcellation: " + parc + " not available, using average adjacency matrix.")
 
     S_coo = scipy.sparse.coo_matrix(S)
     logger.debug("Done")

@@ -38,11 +38,13 @@ def get_params():
     return params
 
 
-def loaders(device, batch_size=1):
+def loaders(device, batch_size=1, download_train=True, download_test=True):
     """
     Creates train and test datasets and places them in a DataLoader to iterate over.
     :param device: device to send the dataset to
     :param batch_size: fixed at 1 for memory efficiency
+    :param download_train: whether to attempt downloading training data, set to False if data available locally
+    :param download_test: whether to attempt downloading test data, set to False if data available locally
     :return: train_loader and test_loader, DataLoaders for the respective datasets
     """
     size_dict = {
@@ -63,7 +65,13 @@ def loaders(device, batch_size=1):
     test_set = HcpDataset(device, settings, params, test=True)
     test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
 
-    return train_loader, test_loader, mat_size
+    if download_train:
+        train_set.download_all()
+    if download_test:
+        test_set.download_all()
+
+    return train_loader, test_loader, train_set.infer_size()
+
 
 
 class HcpDataset(torch.utils.data.Dataset):
@@ -81,9 +89,9 @@ class HcpDataset(torch.utils.data.Dataset):
         self.params = params
         self.settings = settings
 
-        hcp_downloader = HcpDownloader(settings, test)
-        dti_downloader = DtiDownloader(settings, test)
-        self.loaders = {'hcp_downloader': hcp_downloader, 'dti_downloader': dti_downloader}
+        self.hcp_downloader = HcpDownloader(settings, test)
+        self.dti_downloader = DtiDownloader(settings, test)
+        self.loaders = {'hcp_downloader': self.hcp_downloader, 'dti_downloader': self.dti_downloader}
 
         self.list_file = 'subjects.txt'
         if test:
@@ -131,6 +139,19 @@ class HcpDataset(torch.utils.data.Dataset):
 
         return Xw, yoh, coos, perm
 
+    def infer_size(self):
+        subject = self.subjects[0]
+
+        data = process_subject(self.params, subject, [self.session], self.loaders)
+        size = data['adj'].shape[0]
+        return size
+
+    def self_test(self):
+        for subject in self.subjects:
+            process_subject(self.params, subject, [self.session], self.loaders)
+
+        self.logger.info("Downloading All patient data: Completed")
+
 
 class SlidingWindow(object):
     """
@@ -164,13 +185,13 @@ class SlidingWindow(object):
 
             for i in range(Np):
                 for j in range(m):
-                    temp_idx = [idx for idx, e in enumerate(C[i, j, :]) if e == 1]
-                    cue_idx1 = [idx - self.Gn for idx in temp_idx]
-                    cue_idx2 = [idx + self.Gp for idx in temp_idx]
-                    cue_idx = list(zip(cue_idx1, cue_idx2))
+                    temp_idx = [idx for idx, e in enumerate(C[i, j, :]) if e == 1]      # find indices in the original signal with the task
+                    cue_idx1 = [idx - self.Gn for idx in temp_idx]      # starting indices of the task in the new signal (calculated with guards)
+                    cue_idx2 = [idx + self.Gp for idx in temp_idx]      # ending indices of the task in the new signal (calculated with guards)
+                    cue_idx = list(zip(cue_idx1, cue_idx2))             # pair the tuples to form intervals to assign to specific motor task
 
                     for idx in cue_idx:
-                        C_temp[slice(*idx)] = j + 1
+                        C_temp[slice(*idx)] = j + 1                     # assign task to specified interval
 
                 y[i, :] = C_temp[0: N]
 
@@ -187,10 +208,10 @@ class SlidingWindow(object):
             :return: X_windowed, the list of windowed views
             """
 
-            X_windowed = []
+            X_windowed = []     # we store the views into the signal in a list
             X = X.astype('float32')
             p, T = X[0].shape
-            N = T - self.H + 1
+            N = T - self.H + 1      # resulting time signal will have (time_dimension - window_length + 1) time steps
 
             p_new = len(perm)
             assert p_new >= p
