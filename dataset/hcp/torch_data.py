@@ -59,7 +59,7 @@ def loaders(device, batch_size=1, download_train=True, download_test=True):
     if download_test:
         test_set.download_all()
 
-    return train_loader, test_loader
+    return train_loader, test_loader, train_set.infer_size()
 
 
 class HcpDataset(torch.utils.data.Dataset):
@@ -126,6 +126,13 @@ class HcpDataset(torch.utils.data.Dataset):
         Xw, yoh = self.transform(cues, ts, perm)
 
         return Xw, yoh, coos, perm
+
+    def infer_size(self):
+        subject = self.subjects[0]
+
+        data = process_subject(self.params, subject, [self.session], self.loaders)
+        size = data['adj'].shape[0]
+        return size
 
     def download_all(self):
         for subject in self.subjects:
