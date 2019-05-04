@@ -86,6 +86,8 @@ def load_ts_for_subject_task(subject, task, hcp_downloader):
     fname = 'tfMRI_' + task + '_Atlas.dtseries.nii'
     furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, fname)
 
+    hcp_downloader.load(furl)
+
     try:
         furl = os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], furl)
         ts = np.array(nib.load(furl).get_data())
@@ -101,6 +103,11 @@ def load_ts_for_subject_task(subject, task, hcp_downloader):
 def get_cues(subject, task, hcp_downloader):
     logger = logging.getLogger('HCP_Dataset')
     furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, 'EVs')
+    files = ['cue.txt', 'lf.txt', 'lh.txt', 'rf.txt', 'rh.txt', 't.txt']
+
+    for file in files:
+        new_path = os.path.join(furl, file)
+        hcp_downloader.load(new_path)
 
     files = os.listdir(os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], furl))
     try:
@@ -151,6 +158,7 @@ def get_parcellation(parc, subject, hcp_downloader):
                 'dense': '.aparc.a2009s.32k_fs_LR.dlabel.nii'}
 
     parc_furl = os.path.join(fpath, subject + suffixes[parc])
+    hcp_downloader.load(parc_furl)
 
     try:
         parc_obj = nib.load(os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], parc_furl))
@@ -203,6 +211,8 @@ def get_vitals(subject, task, hcp_downloader, TR, fh):
 
     fname = 'tfMRI_' + task + '_Physio_log.txt'
     furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, fname)
+
+    hcp_downloader.load(furl)
 
     try:
         with open(os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], furl)) as inp:
@@ -306,6 +316,8 @@ def get_adj_hemi(hemi, inflation, subject, hcp_downloader, offset):
     fname = subject + '.' + hemi + '.' + inflation + '.32k_fs_LR.surf.gii'
     furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'fsaverage_LR32k', fname)
 
+    hcp_downloader.load(furl)
+
     try:
         img = nib.load(os.path.join(hcp_downloader.settings['DIRECTORIES']['local_server_directory'], furl))
     except:
@@ -329,13 +341,14 @@ def get_adj(subject, parc, loaders):
     return adj
 
 
-def get_adj_dti(subject, parc, dti_downloader): #TODO: update documentation
+def get_adj_dti(subject, parc, dti_downloader):
     logger = logging.getLogger('HCP_Dataset')
     logger.debug("Reading dti adjacency matrix for " + subject)
     furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'dMRI_CONN')
     file = furl + '/' + subject + '.aparc.a2009s.dti.conn.mat'
 
     if subject in dti_downloader.whitelist:
+        dti_downloader.load(file)
         try:
             S = sio.loadmat(os.path.join(dti_downloader.local_path, file))
             S = S.get('S')

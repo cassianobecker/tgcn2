@@ -1,6 +1,9 @@
 import logging
 
 
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+
 def set_logger(name, level):
     """
     Creates/retrieves a Logger object with the desired name and level.
@@ -8,7 +11,6 @@ def set_logger(name, level):
     :param level: Level of logger
     :return: logger, the configured Logger object
     """
-    logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
     logger = logging.getLogger(name)
     level_dict = {
         'debug': logging.DEBUG,

@@ -134,44 +134,9 @@ class HcpDataset(torch.utils.data.Dataset):
         size = data['adj'].shape[0]
         return size
 
-    def download_all(self):
+    def self_test(self):
         for subject in self.subjects:
-
-            for task in [self.session]:
-                fname = 'tfMRI_' + task + '_Atlas.dtseries.nii'
-                furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, fname)
-                self.hcp_downloader.load(furl)
-
-                furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, 'EVs')
-                files = ['cue.txt', 'lf.txt', 'lh.txt', 'rf.txt', 'rh.txt', 't.txt']
-
-                for file in files:
-                    new_path = os.path.join(furl, file)
-                    self.hcp_downloader.load(new_path)
-
-                parc = self.params['PARCELLATION']['parcellation']
-                fpath = os.path.join('HCP_1200', subject, 'MNINonLinear', 'fsaverage_LR32k')
-                suffixes = {'aparc': '.aparc.a2009s.32k_fs_LR.dlabel.nii',
-                            'dense': '.aparc.a2009s.32k_fs_LR.dlabel.nii'}
-                parc_furl = os.path.join(fpath, subject + suffixes[parc])
-                self.hcp_downloader.load(parc_furl)
-
-                fname = 'tfMRI_' + task + '_Physio_log.txt'
-                furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, fname)
-                self.hcp_downloader.load(furl)
-
-                inflation = 'inflated'
-                hemis = ['L', 'R']
-                for hemi in hemis:
-                    fname = subject + '.' + hemi + '.' + inflation + '.32k_fs_LR.surf.gii'
-                    furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'fsaverage_LR32k', fname)
-                    self.hcp_downloader.load(furl)
-
-                furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'dMRI_CONN')
-                file = furl + '/' + subject + '.aparc.a2009s.dti.conn.mat'
-
-                if subject in self.dti_downloader.whitelist:
-                    self.dti_downloader.load(file)
+            process_subject(self.params, subject, [self.session], self.loaders)
 
         self.logger.info("Downloading All patient data: Completed")
 

@@ -183,7 +183,7 @@ def experiment(args):
     # coarsening_levels = 4
 
     batch_size = 1
-    train_loader, test_loader, mat_size = loaders(device, batch_size=batch_size, download_train=False, download_test=False)
+    train_loader, test_loader, mat_size = loaders(device, batch_size=batch_size, download_train=True, download_test=True)
 
     model = NetTGCNBasic(mat_size)
 
