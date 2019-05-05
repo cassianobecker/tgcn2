@@ -41,7 +41,7 @@ def loaders(device, batch_size=1):
     settings = get_settings()
     params = get_params()
 
-    session = 'MOTOR_RL'
+    session = 'MOTOR_LR'
 
     train_set = HcpDataset(device, settings, params, 'train', session)
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=False)

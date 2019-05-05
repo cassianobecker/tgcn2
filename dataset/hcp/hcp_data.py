@@ -219,7 +219,7 @@ class HcpReader:
         cue_array = self.encode_cues(cue_events, ts_length)
         self.logger.debug("Done")
 
-        return cue_array
+        return cue_array[1:]
 
     def read_cue_events_file(self, furl):
         with open(furl) as inp:

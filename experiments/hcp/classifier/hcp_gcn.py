@@ -82,12 +82,13 @@ def train_minibatch(args, model, device, train_loader, optimizer, epoch, mini_ba
         coos = [c[0].to(device) for c in coos]
         target = target.to(device)
         temp_loss = 0
-        model.add_graph(coos, perm)
+        model.module.add_graph(coos, perm)
 
         for i in range(len(data)):
 
             optimizer.zero_grad()
             output = model(data[i].to(device))
+            torch.cuda.synchronize()
             expected = torch.argmax(target[:, i], dim=1)
 
             loss = F.nll_loss(output, expected)
@@ -140,6 +141,7 @@ def test(args, model, device, test_loader, epoch, verbose=True):
 
             for i in range(len(data_t)):
                 output = model(data_t[i].to(device))
+                torch.cuda.synchronize()
                 expected = torch.argmax(target[:, i], dim=1)
                 test_loss += F.nll_loss(output, expected, reduction='sum').item()
                 pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
@@ -250,5 +252,6 @@ def main():
 
 
 if __name__ == '__main__':
+    os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
     seed_everything(76)
     main()
