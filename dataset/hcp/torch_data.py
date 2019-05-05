@@ -77,7 +77,7 @@ class HcpDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
 
         subject = self.subjects[idx]
-        data = self.reader.process_subject(self.params, subject, [self.session], self.loaders)
+        data = self.reader.process_subject(subject, [self.session])
 
         cues = data['functional'][self.session]['cues']
         ts = data['functional'][self.session]['ts']

@@ -18,7 +18,7 @@ class HcpReader:
 
     def __init__(self, settings, params):
 
-        self.logger = logging.getLogger('HCP_Dataset')
+        self.logger = logging.getLogger('HcpDataset')
         self.local_folder = settings['DIRECTORIES']['local_server_directory']
         self.parc = params['PARCELLATION']['parcellation']
         self.inflation = params['SURFACE']['inflation']
@@ -39,7 +39,6 @@ class HcpReader:
             subjects = [s.strip() for s in f.readlines()]
 
         self.logger.info('Loaded ' + str(len(subjects)) + ' subjects from: ' + list_url)
-        self.logger.handlers.pop()
 
         return subjects
 
@@ -89,7 +88,7 @@ class HcpReader:
                 self.logger.debug("Done")
 
             except:
-                self.logger.warning('Patient ' + subject + ' doesnt have physio information, skipping')
+                self.logger.warning('Subject ' + subject + ' does not have physiological information, skipping')
                 # TODO: Remove subject from list
         return vitals
 

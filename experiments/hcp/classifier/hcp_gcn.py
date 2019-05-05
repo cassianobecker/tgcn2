@@ -90,21 +90,14 @@ def train_minibatch(args, model, device, train_loader, optimizer, epoch, mini_ba
             output = model(data[i].to(device))
             expected = torch.argmax(target[:, i], dim=1)
 
-            k = 1.
-            w = torch.tensor([1., k, k, k, k, k]).to(device)
-
-            loss = F.nll_loss(output, expected, weight=w)
+            loss = F.nll_loss(output, expected)
             loss = loss / mini_batch
             train_loss += loss
             temp_loss += loss
 
-            for p in model.named_parameters():
-                if p[0].split('.')[0][:2] == 'fc':
-                    loss = loss + args.reg_weight * (p[1] ** 2).sum()
-
             loss.backward()
 
-            if batch_idx % mini_batch == 0:
+            if batch_idx > 0 and batch_idx % mini_batch == 0:
                 optimizer.step()
 
         if verbose:
@@ -179,12 +172,11 @@ def experiment(args):
     batch_size = 1
     train_loader, test_loader = loaders(device, batch_size=batch_size)
 
-    mat_size = train_loader.dataset.data_shape()
-
     train_loader.dataset.self_check()
 
+    data_shape = train_loader.dataset.data_shape()
 
-    model = NetTGCNBasic(mat_size)
+    model = NetTGCNBasic(data_shape)
 
     if torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model)
