@@ -82,7 +82,7 @@ def train_minibatch(args, model, device, train_loader, optimizer, epoch, mini_ba
         coos = [c[0].to(device) for c in coos]
         target = target.to(device)
         temp_loss = 0
-        model.module.add_graph(coos, perm)
+        model.add_graph(coos, perm)
 
         for i in range(len(data)):
 
@@ -143,7 +143,7 @@ def test(args, model, device, test_loader, epoch, verbose=True):
             # data = data_t[0].to(device)
             target = target_t.to(device)
 
-            model.module.add_graph(coos, perm)
+            model.add_graph(coos, perm)
 
             for i in range(len(data_t)):
                 output = model(data_t[i].to(device))
@@ -176,10 +176,13 @@ def experiment(args):
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    # coarsening_levels = 4
-
     batch_size = 1
-    train_loader, test_loader, mat_size = loaders(device, batch_size=batch_size, download_train=True, download_test=True)
+    train_loader, test_loader = loaders(device, batch_size=batch_size)
+
+    mat_size = train_loader.dataset.data_shape()
+
+    train_loader.dataset.self_check()
+
 
     model = NetTGCNBasic(mat_size)
 

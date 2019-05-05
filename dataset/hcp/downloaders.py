@@ -1,22 +1,7 @@
 import os
 import requests
-from urllib3.util.retry import Retry
-from requests.adapters import HTTPAdapter
 
 from util.logging import set_logger
-from util.path import get_root
-
-
-def retry_session(retries=5):
-    session = requests.Session()
-    retries = Retry(total=retries,
-                backoff_factor=0.3,
-                status_forcelist=[500, 502, 503, 504],
-                method_whitelist=frozenset(['GET', 'POST']))
-
-    session.mount('https://', HTTPAdapter(max_retries=retries))
-    session.mount('http://', HTTPAdapter(max_retries=retries))
-    return session
 
 
 class HcpDownloader:
@@ -25,12 +10,10 @@ class HcpDownloader:
     :param settings: ConfigParser that contains server, directory and credential info and logging levels
     :param test: boolean to differentiate the loggers for training and test sets
     """
-    def __init__(self, settings, test):
+
+    def __init__(self, settings):
         self.settings = settings
-        if test:
-            self.logger = set_logger('HCP_Test_Downloader', settings['LOGGING']['downloader_logging_level'])
-        else:
-            self.logger = set_logger('HCP_Train_Downloader', settings['LOGGING']['downloader_logging_level'])
+        self.logger = set_logger('HcpDownloader', settings['LOGGING']['downloader_logging_level'])
 
     def load(self, path):
         """
@@ -48,31 +31,25 @@ class HcpDownloader:
             url = self.settings['SERVERS']['hcp_server_url'].format(subject, subject, subject) + key
             self.logger.info("Remote download from server: " + url)
 
-            if self.settings['CREDENTIALS']['hcp_server_username'] == [] or self.settings['CREDENTIALS']['hcp_server_password'] == []:
+            if self.settings['CREDENTIALS']['hcp_server_username'] == '' or self.settings['CREDENTIALS'][
+                'hcp_server_password'] == '':
                 self.logger.error("HCP server credentials are empty")
 
             r = requests.get(url,
-                             auth=(self.settings['CREDENTIALS']['hcp_server_username'], self.settings['CREDENTIALS']['hcp_server_password']),
+                             auth=(self.settings['CREDENTIALS']['hcp_server_username'],
+                                   self.settings['CREDENTIALS']['hcp_server_password']),
                              stream=True)
+
             if r.status_code == 200:
+
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, 'wb') as f:
                     self.logger.debug("Writing to path: " + path)
                     f.write(r.content)
                     self.logger.debug("Writing to " + path + 'completed')
+
             else:
-                session = retry_session(retries=5)
-                r = session.get(url,
-                                auth=(self.settings['CREDENTIALS']['hcp_server_username'],
-                                      self.settings['CREDENTIALS']['hcp_server_password']), stream=True)
-                if r.status_code == 200:
-                    os.makedirs(os.path.dirname(path), exist_ok=True)
-                    with open(path, 'wb') as f:
-                        self.logger.debug("Writing to path: " + path)
-                        f.write(r.content)
-                        self.logger.debug("Writing to " + path + 'completed')
-                else:
-                    self.logger.error("Request unsuccessful: Error " + str(r.status_code))
+                self.logger.error("Request unsuccessful: Error " + str(r.status_code))
 
 
 class DtiDownloader:
@@ -81,15 +58,11 @@ class DtiDownloader:
     :param settings: configparser that contains server, directory and credential info and logging levels
     :param test: Boolean to differentiate the loggers for training and test sets
     """
-    def __init__(self, settings, test):
+
+    def __init__(self, settings):
         self.base_path = settings['SERVERS']['dti_server_url']
         self.local_path = settings['DIRECTORIES']['local_server_directory']
-        whitelist_path = os.path.join(get_root(), settings['DIRECTORIES']['local_whitelist_directory'])
-        self.whitelist = [line.rstrip('\n') for line in open(whitelist_path)]
-        if test:
-            self.logger = set_logger('Dti_Test_Downloader', settings['LOGGING']['downloader_logging_level'])
-        else:
-            self.logger = set_logger('Dti_Train_Downloader', settings['LOGGING']['downloader_logging_level'])
+        self.logger = set_logger('DtiDownloader', settings['LOGGING']['downloader_logging_level'])
 
     def load(self, path):
         """
@@ -108,8 +81,11 @@ class DtiDownloader:
             temp = key.split('/', 1)
             key = temp[0] + '/' + subject + '/' + temp[1]
             url = self.base_path + key
+
             r = requests.get(url)
+
             self.logger.info("Remote download from server: " + url)
+
             if r.status_code == 200:
                 os.makedirs(os.path.dirname(path), exist_ok=True)
                 with open(path, 'wb') as f:

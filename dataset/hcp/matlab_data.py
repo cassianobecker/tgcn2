@@ -5,7 +5,7 @@ import scipy.sparse
 import scipy.io as sio
 from sklearn.metrics import classification_report, confusion_matrix
 
-from dataset.hcp.data import encode, load_subjects
+from dataset.hcp.hcp_data import encode, load_subjects
 from util.path import get_root
 from util.encode import one_hot
 
@@ -115,6 +115,47 @@ def get_lookback_data(X, y, lookback=5):
         X_lb[t - lookback - 2, :, :] = X[t - lookback - 2: t - 1, :]
         y_lb[t - lookback - 2, :] = y[t - 1, :]
     return X_lb, y_lb
+
+
+def encode(C, X, H, Gp, Gn):
+    """
+    encodes
+    :param C: data labels
+    :param X: data to be windowed
+    :param H: window size
+    :param Gp: start point guard
+    :param Gn: end point guard
+    :return:
+    """
+    _, m, _ = C.shape
+    Np, p, T = X.shape
+    N = T - H + 1
+    num_examples = Np * N
+
+    y = np.zeros([Np, N])
+    C_temp = np.zeros(T)
+
+    for i in range(Np):
+        for j in range(m):
+            temp_idx = [idx for idx, e in enumerate(C[i, j, :]) if e == 1]
+            cue_idx1 = [idx - Gn for idx in temp_idx]
+            cue_idx2 = [idx + Gp for idx in temp_idx]
+            cue_idx = list(zip(cue_idx1, cue_idx2))
+
+            for idx in cue_idx:
+                C_temp[slice(*idx)] = j + 1
+
+        y[i, :] = C_temp[0: N]
+
+    X_windowed = np.zeros([Np, N, p, H])
+
+    for t in range(N):
+        X_windowed[:, t, :, :] = X[:, :, t: t + H]
+
+    y = np.reshape(y, (num_examples))
+    X_windowed = np.reshape(X_windowed, (num_examples, p, H))
+
+    return [X_windowed.astype("float32"), y]
 
 
 def decode(y_hat, length=6, offset=2):
