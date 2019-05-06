@@ -1,5 +1,4 @@
 import os
-import logging
 
 import nibabel as nib
 import numpy as np
@@ -7,7 +6,7 @@ import scipy.io as sio
 import scipy.signal
 import scipy.sparse
 
-from util.logging import set_logger
+from util.logging import get_logger
 from util.path import get_root
 
 from dataset.hcp.downloaders import HcpDownloader, DtiDownloader
@@ -18,7 +17,7 @@ class HcpReader:
 
     def __init__(self, settings, params):
 
-        self.logger = logging.getLogger('HcpDataset')
+        self.logger = get_logger('HcpDataset')
         self.local_folder = settings['DIRECTORIES']['local_server_directory']
         self.parc = params['PARCELLATION']['parcellation']
         self.inflation = params['SURFACE']['inflation']
@@ -28,8 +27,6 @@ class HcpReader:
 
         self.hcp_downloader = HcpDownloader(settings)
         self.dti_downloader = DtiDownloader(settings)
-
-        nib.imageglobals.logger = set_logger('Nibabel', settings['LOGGING']['nibabel_logging_level'])
 
     def load_subject_list(self, list_url):
 

@@ -6,7 +6,7 @@ import numpy as np
 
 from util.path import get_root
 from util.encode import one_hot
-from util.logging import set_logger
+from util.logging import init_loggers
 
 from dataset.hcp.hcp_data import HcpReader
 
@@ -41,6 +41,8 @@ def loaders(device, batch_size=1):
     settings = get_settings()
     params = get_params()
 
+    init_loggers(settings)
+
     session = 'MOTOR_LR'
 
     train_set = HcpDataset(device, settings, params, 'train', session)
@@ -58,8 +60,6 @@ class HcpDataset(torch.utils.data.Dataset):
     """
 
     def __init__(self, device, settings, params, regime, session):
-        self.logger = set_logger('HcpDataset', settings['LOGGING']['dataloader_logging_level'])
-
         self.device = device
         self.params = params
         self.settings = settings
@@ -99,7 +99,6 @@ class HcpDataset(torch.utils.data.Dataset):
     def self_check(self):
         for subject in self.subjects:
             self.reader.process_subject(subject, [self.session])
-        self.logger.info("Downloading All patient data: Completed")
 
 
 class SlidingWindow(object):

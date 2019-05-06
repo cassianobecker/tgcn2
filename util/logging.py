@@ -1,7 +1,12 @@
 import logging
+import os
 
+import nibabel as nib
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+from util.path import get_root
+
+LOG_FILE = os.path.join(get_root(), 'logger.log')
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', filename=LOG_FILE)
 
 
 def set_logger(name, level):
@@ -20,7 +25,15 @@ def set_logger(name, level):
         'critical': logging.CRITICAL
     }
     logger.setLevel(level_dict[level])
-    log_stream = logging.StreamHandler()
-    log_stream.setLevel(level_dict[level])
-    logger.addHandler(log_stream)
     return logger
+
+
+def get_logger(name):
+    return logging.getLogger(name)
+
+
+def init_loggers(settings):
+    set_logger('HcpDownloader', settings['LOGGING']['downloader_logging_level'])
+    set_logger('HcpDataset', settings['LOGGING']['dataloader_logging_level'])
+    set_logger('DtiDownloader', settings['LOGGING']['downloader_logging_level'])
+    nib.imageglobals.logger = set_logger('Nibabel', settings['LOGGING']['nibabel_logging_level'])

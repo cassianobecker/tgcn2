@@ -1,7 +1,7 @@
 import os
 import requests
 
-from util.logging import set_logger
+from util.logging import get_logger
 
 
 class HcpDownloader:
@@ -13,7 +13,7 @@ class HcpDownloader:
 
     def __init__(self, settings):
         self.settings = settings
-        self.logger = set_logger('HcpDownloader', settings['LOGGING']['downloader_logging_level'])
+        self.logger = get_logger('HcpDownloader')
 
     def load(self, path):
         """
@@ -62,7 +62,7 @@ class DtiDownloader:
     def __init__(self, settings):
         self.base_path = settings['SERVERS']['dti_server_url']
         self.local_path = settings['DIRECTORIES']['local_server_directory']
-        self.logger = set_logger('DtiDownloader', settings['LOGGING']['downloader_logging_level'])
+        self.logger = get_logger('DtiDownloader')
 
     def load(self, path):
         """
