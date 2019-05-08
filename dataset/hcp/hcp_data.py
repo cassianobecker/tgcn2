@@ -6,6 +6,8 @@ import scipy.io as sio
 import scipy.signal
 import scipy.sparse
 
+from sklearn.preprocessing import StandardScaler
+
 from util.logging import get_logger
 from util.path import get_root
 
@@ -123,7 +125,8 @@ class HcpReader:
         # parcellate time series
         ts_p = self.parcellate(ts, parc_vector, parc_labels)
 
-        return ts_p
+        ts_norm = self.normalize_time_series(ts_p)
+        return ts_norm
 
     def load_raw_time_series(self, subject, task):
 
@@ -198,6 +201,11 @@ class HcpReader:
         self.logger.debug("Done")
 
         return x_parc
+
+    def normalize_time_series(self, ts_p):
+        scaler = StandardScaler()
+        ts_p = scaler.fit_transform(np.swapaxes(ts_p, 0, 1))
+        return np.swapaxes(ts_p, 0, 1)
 
     # ##################### CUES ####################################
 

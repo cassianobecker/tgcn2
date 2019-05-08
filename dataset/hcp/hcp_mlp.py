@@ -11,52 +11,24 @@ import torch.nn.functional as F
 import torch.optim as optim
 
 from dataset.hcp.torch_data import loaders
-from nn.chebnet import ChebTimeConv
 
 
-class NetTGCNBasic(torch.nn.Module):
-    """
-    A 1-Layer time graph convolutional network
-    :param mat_size: temporary parameter to fix the FC1 size
-    """
+class NetMLP(torch.nn.Module):
+
     def __init__(self, mat_size):
-        super(NetTGCNBasic, self).__init__()
 
-        f1, g1, k1, h1 = 1, 64, 25, 15
-        self.conv1 = ChebTimeConv(f1, g1, K=k1, H=h1)
+        super(NetMLP, self).__init__()
 
-        n2 = mat_size
-        c = 6
-        self.fc1 = torch.nn.Linear(int(n2 * g1), c)
+        c = 512
+        self.fc1 = torch.nn.Linear(mat_size * 15, c)
 
-        self.coos = None
-        self.perm = None
-
-    def add_graph(self, coos, perm):
-        """
-        Sets the COO adjacency matrix (or matrices post-coarsening) for the graph and the order of vertices in the matrix
-        :param coos: list of adjacency matrices for the graph
-        :param perm: order of vertices in the adjacency matrix
-        :return: None
-        """
-        self.coos = coos
-        self.perm = perm
+        d = 6
+        self.fc2 = torch.nn.Linear(c, d)
 
     def forward(self, x):
-        """
-        Computes forward pass through the time graph convolutional network
-        :param x: windowed BOLD signal to as input to the TGCN
-        :return: output of the TGCN forward pass
-        """
-        x, edge_index = x, self.coos[0]
-
-        x = self.conv1(x, edge_index)
-
-        x = F.relu(x)
-
         x = x.view(x.shape[0], -1)
         x = self.fc1(x)
-
+        x = self.fc2(x)
         return F.log_softmax(x, dim=1)
 
 
@@ -185,7 +157,7 @@ def experiment(args):
 
     data_shape = train_loader.dataset.data_shape()
 
-    model = NetTGCNBasic(data_shape)
+    model = NetMLP(data_shape)
 
     if torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model)
