@@ -64,15 +64,19 @@ class DtiDownloader:
         self.local_path = settings['DIRECTORIES']['local_server_directory']
         self.logger = get_logger('DtiDownloader')
 
-    def load(self, path):
+    def load(self, path, token_url):
         """
         Checks for file in the specified path. If file is unavailable, downloads it from the HCP database.
         :param path: local path to check for file and download to if unavailable
+        :param token_url: local path to check for token and download to if unavailable
         :return: None
         """
         path = os.path.join(self.local_path, path)
+        token_url = os.path.join(self.local_path, token_url)
         if os.path.isfile(path):
             self.logger.debug("File found in: " + path)
+        elif os.path.isfile(token_url):
+            self.logger.debug("Token found in: " + token_url)
         else:
             self.logger.info("File not found in: " + path)
             subject = path.split('/')[5]
@@ -93,4 +97,12 @@ class DtiDownloader:
                     f.write(r.content)
                     self.logger.debug("Writing to " + path + 'completed')
             else:
-                self.logger.error("DTI request unsuccessful: Error " + str(r.status_code))
+                self.logger.warning("DTI request unsuccessful: Error " + str(r.status_code))
+                self.logger.debug("Creating token in path: " + token_url)
+                dmri_dir = os.path.join(self.local_path, 'HCP_1200', subject, 'MNINonLinear', 'Results', 'dMRI_CONN')
+                if not os.path.exists(dmri_dir):
+                    os.makedirs(dmri_dir)
+                open(token_url, 'a').close()
+                self.logger.debug("Creating token in " + token_url + 'completed')
+
+

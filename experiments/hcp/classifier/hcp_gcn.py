@@ -14,6 +14,25 @@ from dataset.hcp.torch_data import loaders
 from nn.chebnet import ChebTimeConv
 
 
+class NetMLP(torch.nn.Module):
+
+    def __init__(self, mat_size):
+
+        super(NetMLP, self).__init__()
+
+        c = 512
+        self.fc1 = torch.nn.Linear(mat_size * 15, c)
+
+        d = 6
+        self.fc2 = torch.nn.Linear(c, d)
+
+    def forward(self, x):
+        x = x.view(x.shape[0], -1)
+        x = self.fc1(x)
+        x = self.fc2(x)
+        return F.log_softmax(x, dim=1)
+
+
 class NetTGCNBasic(torch.nn.Module):
     """
     A 1-Layer time graph convolutional network
@@ -77,29 +96,36 @@ def train_minibatch(args, model, device, train_loader, optimizer, epoch, mini_ba
     train_loss = 0
     model.train()
 
+    k = 1.
+    w = torch.tensor([1., k, k, k, k, k]).to(device)
+
     for batch_idx, (data, target, coos, perm) in enumerate(train_loader):
 
         coos = [c[0].to(device) for c in coos]
         target = target.to(device)
         temp_loss = 0
-        model.module.add_graph(coos, perm)
+        #model.module.add_graph(coos, perm)
 
         for i in range(len(data)):
 
-            optimizer.zero_grad()
             output = model(data[i].to(device))
             torch.cuda.synchronize()
             expected = torch.argmax(target[:, i], dim=1)
 
-            loss = F.nll_loss(output, expected)
-            loss = loss / mini_batch
+            loss = F.nll_loss(output, expected, weight=w)
             train_loss += loss
             temp_loss += loss
 
+            for p in model.named_parameters():
+                if p[0].split('.')[0][:2] == 'fc':
+                    loss = loss + args.reg_weight * (p[1] ** 2).sum()
+
+            loss = loss / mini_batch
             loss.backward()
 
-            if batch_idx > 0 and batch_idx % mini_batch == 0:
+            if i > 0 and i % mini_batch == 0:
                 optimizer.step()
+                optimizer.zero_grad()
 
         if verbose:
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
@@ -137,7 +163,7 @@ def test(args, model, device, test_loader, epoch, verbose=True):
             # data = data_t[0].to(device)
             target = target_t.to(device)
 
-            model.add_graph(coos, perm)
+            #model.add_graph(coos, perm)
 
             for i in range(len(data_t)):
                 output = model(data_t[i].to(device))
@@ -155,7 +181,7 @@ def test(args, model, device, test_loader, epoch, verbose=True):
         print('Test Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
             epoch, batch_idx + 1, len(test_loader.dataset),
                    100. * (batch_idx + 1) / len(test_loader.dataset),
-            test_loss.item()))
+            test_loss))
 
     return test_loss, correct
 
@@ -174,11 +200,12 @@ def experiment(args):
     batch_size = 1
     train_loader, test_loader = loaders(device, batch_size=batch_size)
 
-    train_loader.dataset.self_check()
+    #train_loader.dataset.self_check()
 
     data_shape = train_loader.dataset.data_shape()
 
-    model = NetTGCNBasic(data_shape)
+    model = NetMLP(data_shape)
+    #model = NetTGCNBasic(data_shape)
 
     if torch.cuda.device_count() > 1:
         model = torch.nn.DataParallel(model)
@@ -192,7 +219,7 @@ def experiment(args):
 
     for epoch in range(1, args.epochs + 1):
 
-        train_loss = train_minibatch(args, model, device, train_loader, optimizer, epoch, mini_batch=batch_size,
+        train_loss = train_minibatch(args, model, device, train_loader, optimizer, epoch, mini_batch=45,
                                      verbose=True)
 
         scheduler.step()

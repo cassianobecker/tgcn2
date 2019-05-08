@@ -1,13 +1,133 @@
 import os
 import numpy as np
+from os.path import expanduser
+
+from util.logging import get_logger
 
 import scipy.sparse
 import scipy.io as sio
 from sklearn.metrics import classification_report, confusion_matrix
 
-from dataset.hcp.hcp_data import encode, load_subjects
+#from dataset.hcp.hcp_data import encode, load_subjects
 from util.path import get_root
 from util.encode import one_hot
+
+
+def load_subjects(list_url):
+
+    with open(list_url, 'r') as f:
+        subjects = [s.strip() for s in f.readlines()]
+
+    return subjects
+
+
+def load_strucutural(subjects, file_url):
+
+    strut = sio.loadmat(file_url).get('strut')
+    strut_subs = [strut[0][0][2][i][0][0] for i in range(len(strut[0][0][2]))]
+
+    S = list()
+
+    for subject in subjects:
+        idx_subj = strut_subs.index(subject)
+        Si = strut[0][0][1][idx_subj][0]
+        S.append(scipy.sparse.csr_matrix(Si))
+
+    return S
+
+
+class MatlabReader():
+
+    def __init__(self, settings, params):
+
+        self.logger = get_logger('HcpDataset')
+        self.local_folder = settings['DIRECTORIES']['local_server_directory']
+        self.parc = params['PARCELLATION']['parcellation']
+        self.inflation = params['SURFACE']['inflation']
+        self.tr = float(params['FMRI']['tr'])
+        self.physio_sampling_rate = int(params['FMRI']['physio_sampling_rate'])
+        self.regress_physio = params['FMRI']['regress_physio']
+
+        list_file = 'subjects_inter.txt'
+        list_url = os.path.join(get_root(), 'conf', list_file)
+        subjects_strut = load_subjects(list_url)
+
+        structural_file = 'struct_dti.mat'
+        structural_url = os.path.join(get_root(), 'conf', 'hcpdata', structural_file)
+        self.S = load_strucutural(subjects_strut, structural_url)
+
+    def load_subject_list(self, list_url):
+
+        self.logger.info('Loading subjects from ' + list_url)
+
+        with open(list_url, 'r') as f:
+            subjects = [s.strip() for s in f.readlines()]
+
+        self.logger.info('Loaded ' + str(len(subjects)) + ' subjects from: ' + list_url)
+
+        return subjects
+
+    def process_subject(self, subject, tasks):
+
+        self.logger.info('Processing subject {}'.format(subject))
+
+        task_list = dict()
+        for task in tasks:
+            self.logger.debug('Processing task {} ...'.format(task))
+            task_dict = dict()
+
+            C, X, _ = self.get_dataset([subject], task, p=148, T=284)
+
+            task_dict['ts'] = X[0]
+
+            task_dict['cues'] = C[0]
+
+            task_list[task] = task_dict
+
+        data = dict()
+        data['functional'] = task_list
+
+        data['adjacency'] = self.S[0]
+
+        return data
+
+    def get_dataset(self, subjects, session, p=148, T=284):
+
+        data_path = os.path.join(expanduser("~"), 'data_full')
+        post_fix = '_aparc_tasks_aparc.mat'
+
+        # with open(list_url, 'r') as f:
+        #     filenames = [s.strip() + post_fix for s in f.readlines()]
+
+        filenames = [s + post_fix for s in subjects]
+
+        Np = len(filenames)
+        m = 5
+
+        mis_matched = 0
+
+        C = np.zeros([Np, m, T])
+        X = np.zeros([Np, p, T])
+        X_bar = np.zeros([Np, p, T])
+
+        for i, s in enumerate(filenames):
+            file = os.path.join(data_path, s)
+            ds = sio.loadmat(file).get('ds')
+            MOTOR = ds[0, 0][session]
+
+            C_i = get_cues(MOTOR)
+            X_i = get_bold(MOTOR)
+
+            C[i, :, :] = C_i
+            X[i, :, :] = X_i.transpose()
+
+        return [C, X, X_bar]
+
+
+    def get_adjacency(self, subject):
+
+        return self.S[0]
+
 
 
 def get_cues(MOTOR):

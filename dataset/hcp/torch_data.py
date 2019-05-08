@@ -9,6 +9,7 @@ from util.encode import one_hot
 from util.logging import init_loggers
 
 from dataset.hcp.hcp_data import HcpReader
+from dataset.hcp.matlab_data import MatlabReader
 
 
 def get_settings():

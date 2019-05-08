@@ -293,11 +293,12 @@ class HcpReader:
         self.logger.debug("Reading dti adjacency matrix for " + subject)
         furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'dMRI_CONN')
         file = os.path.join(furl, subject + '.aparc.a2009s.dti.conn.mat')
+        token_url = os.path.join(furl, subject + '_404_token.txt')
 
-        self.dti_downloader.load(file)
+        self.dti_downloader.load(file, token_url)
 
         try:
-            S = sio.loadmat(os.path.join(self.local_path, file))
+            S = sio.loadmat(os.path.join(self.local_folder, file))
             S = S.get('S')
         except:
             file_dir = os.path.join(get_root(), 'dataset/hcp/res/average1.aparc.a2009s.dti.conn.mat')
@@ -305,7 +306,7 @@ class HcpReader:
                 S = sio.loadmat(file_dir).get('S')
             except:
                 self.logger.error("File " + file_dir + " not found")
-            self.logger.warning(
+            self.logger.info(
                 "Local DTI adjacency matrix for subject: " + subject + " in parcellation: " + self.parc +
                 " not available, using average adjacency matrix.")
 

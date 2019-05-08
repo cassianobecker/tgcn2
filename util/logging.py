@@ -1,5 +1,6 @@
 import logging
 import os
+import sys
 
 import nibabel as nib
 
@@ -17,6 +18,11 @@ def set_logger(name, level):
     :return: logger, the configured Logger object
     """
     logger = logging.getLogger(name)
+
+    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(formatter)
+    logger.addHandler(handler)
     level_dict = {
         'debug': logging.DEBUG,
         'info': logging.INFO,
