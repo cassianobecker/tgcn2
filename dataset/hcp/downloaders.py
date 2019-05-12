@@ -51,6 +51,11 @@ class HcpDownloader:
             else:
                 self.logger.error("Request unsuccessful: Error " + str(r.status_code))
 
+    def delete_dir(self, path):
+        path = os.path.join(self.settings['DIRECTORIES']['local_server_directory'], path)
+        if os.path.isfile(path):
+            os.remove(path)
+
 
 class DtiDownloader:
     """

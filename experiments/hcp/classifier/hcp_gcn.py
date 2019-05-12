@@ -2,6 +2,7 @@ from __future__ import print_function
 import argparse
 import random
 import os
+import psutil
 
 import numpy as np
 
@@ -81,25 +82,26 @@ def train_minibatch(args, model, device, train_loader, optimizer, epoch, mini_ba
     w = torch.tensor([1., k, k, k, k, k]).to(device)
 
     for batch_idx, (data, target, coos, perm) in enumerate(train_loader):
-
         coos = [c[0].to(device) for c in coos]
         target = target.to(device)
         temp_loss = 0
-        #model.module.add_graph(coos, perm)
+        model.module.add_graph(coos, perm)
 
         for i in range(len(data)):
 
             output = model(data[i].to(device))
+
             torch.cuda.synchronize()
             expected = torch.argmax(target[:, i], dim=1)
 
             loss = F.nll_loss(output, expected, weight=w)
-            train_loss += loss
-            temp_loss += loss
+            loss_val = loss.item()
+            train_loss += loss_val
+            temp_loss += loss_val
 
             for p in model.named_parameters():
                 if p[0].split('.')[0][:2] == 'fc':
-                    loss = loss + args.reg_weight * (p[1] ** 2).sum()
+                    loss_val = loss_val + args.reg_weight * (p[1] ** 2).sum()
 
             loss = loss / mini_batch
             loss.backward()
@@ -112,7 +114,7 @@ def train_minibatch(args, model, device, train_loader, optimizer, epoch, mini_ba
             print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
                 epoch, batch_idx + 1, len(train_loader.dataset),
                 100. * (batch_idx + 1) / len(train_loader.dataset),
-                temp_loss.item()))
+                temp_loss))
 
     train_loss /= (len(train_loader.dataset) * len(data))
     return train_loss
@@ -144,7 +146,7 @@ def test(args, model, device, test_loader, epoch, verbose=True):
             # data = data_t[0].to(device)
             target = target_t.to(device)
 
-            #model.add_graph(coos, perm)
+            model.module.add_graph(coos, perm)
 
             for i in range(len(data_t)):
                 output = model(data_t[i].to(device))

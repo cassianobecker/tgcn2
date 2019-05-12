@@ -1,4 +1,5 @@
 import os
+from distutils.util import strtobool
 
 import nibabel as nib
 import numpy as np
@@ -21,6 +22,8 @@ class HcpReader:
 
         self.logger = get_logger('HcpDataset')
         self.local_folder = settings['DIRECTORIES']['local_server_directory']
+        self.delete_nii = strtobool(settings['DIRECTORIES']['delete_after_downloading'])
+
         self.parc = params['PARCELLATION']['parcellation']
         self.inflation = params['SURFACE']['inflation']
         self.tr = float(params['FMRI']['tr'])
@@ -140,6 +143,8 @@ class HcpReader:
         try:
             furl = os.path.join(self.local_folder, furl)
             ts = np.array(nib.load(furl).get_data())
+            if self.delete_nii:
+                self.hcp_downloader.delete_dir(furl)
         except:
             self.logger.error("File " + furl + " not found, skipping subject.")
 
