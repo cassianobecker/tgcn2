@@ -24,7 +24,7 @@ class HcpReader:
         self.local_folder = settings['DIRECTORIES']['local_server_directory']
         self.delete_nii = strtobool(settings['DIRECTORIES']['delete_after_downloading'])
 
-        self.parc = params['PARCELLATION']['parcellation']
+        self.parcellation = params['PARCELLATION']['parcellation']
         self.inflation = params['SURFACE']['inflation']
         self.tr = float(params['FMRI']['tr'])
         self.physio_sampling_rate = int(params['FMRI']['physio_sampling_rate'])
@@ -161,7 +161,7 @@ class HcpReader:
         suffixes = {'aparc': '.aparc.a2009s.32k_fs_LR.dlabel.nii',
                     'dense': '.aparc.a2009s.32k_fs_LR.dlabel.nii'}
 
-        parc_furl = os.path.join(fpath, subject + suffixes[self.parc])
+        parc_furl = os.path.join(fpath, subject + suffixes[self.parcellation])
 
         self.hcp_downloader.load(parc_furl)
 
@@ -170,12 +170,12 @@ class HcpReader:
         except:
             self.logger.error("File " + os.path.join(self.local_folder, parc_furl) + " not found")
 
-        if self.parc == 'aparc':
+        if self.parcellation == 'aparc':
             parc_vector = np.array(parc_obj.get_data()[0], dtype='int')
             table = parc_obj.header.matrix[0].named_maps.__next__().label_table
             parc_labels = [(region[1].key, region[1].label) for region in table.items()]
 
-        if self.parc == 'dense':
+        if self.parcellation == 'dense':
             n_regions = len(parc_obj.get_data()[0])
             parc_vector = np.array(range(n_regions))
             parc_labels = [(i, i) for i in range(n_regions)]
@@ -196,11 +196,11 @@ class HcpReader:
         for bad_region in bad_regions:
             parc_idx.remove(bad_region)
 
-        if self.parc == 'aparc':
+        if self.parcellation == 'aparc':
             # build parcellated signal by taking the mean across voxels
             x_parc = np.array([np.mean(tst[:, (parc_vector == i).tolist()], axis=1) for i in parc_idx])
 
-        if self.parc == 'dense':
+        if self.parcellation == 'dense':
             x_parc = tst.T
 
         self.logger.debug("Done")
@@ -251,10 +251,10 @@ class HcpReader:
 
     def get_adjacency(self, subject):
 
-        if self.parc == 'aparc':
+        if self.parcellation == 'aparc':
             adj = self.get_adjacency_dti(subject)
 
-        if self.parc == 'dense':
+        if self.parcellation == 'dense':
             adj, coords = self.get_adjacency_mesh(subject)
 
         return adj
@@ -320,7 +320,7 @@ class HcpReader:
             except:
                 self.logger.error("File " + file_dir + " not found")
             self.logger.info(
-                "Local DTI adjacency matrix for subject: " + subject + " in parcellation: " + self.parc +
+                "Local DTI adjacency matrix for subject: " + subject + " in parcellation: " + self.parcellation +
                 " not available, using average adjacency matrix.")
 
         S_coo = scipy.sparse.coo_matrix(S)
