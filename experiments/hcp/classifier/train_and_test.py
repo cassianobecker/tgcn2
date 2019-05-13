@@ -60,6 +60,9 @@ class Runner:
 
         for batch_idx, (data, target, graph_list, perm) in enumerate(self.train_loader):
 
+            if data is None:
+                continue
+
             target = target.to(self.device)
 
             graph_list = [c[0].to(self.device) for c in graph_list]

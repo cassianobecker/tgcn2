@@ -11,7 +11,6 @@ from util.torch import seed_everything
 from util.path import get_dir
 
 from dataset.hcp.torch_data import HcpDataset
-from dataset.hcp.transforms import SpectralGraphCoarsening
 
 from nn.chebnet import ChebTimeConv
 
@@ -54,51 +53,6 @@ class NetTGCNBasic(torch.nn.Module):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
-class NetTGCNTwoLayer(torch.nn.Module):
-    """
-    A 1-Layer time graph convolutional network
-    :param mat_size: temporary parameter to fix the FC1 size
-    """
-
-    def __init__(self, mat_size, resolution):
-        super(NetTGCNTwoLayer, self).__init__()
-
-        f1, g1, k1, h1 = 1, 64, 12, 15
-        self.conv1 = ChebTimeConv(f1, g1, K=k1, H=h1)
-
-        f2, g2, k2, h2 = g1, 32, 8, 1
-        self.conv2 = ChebTimeConv(f2, g2, K=k1, H=1)
-
-        # n2 = mat_size
-        n2 = resolution[0]
-        c = 6
-        self.fc1 = torch.nn.Linear(int(n2 * g2), c)
-
-    def forward(self, x, graph_list, mapping_list):
-        """
-        Computes forward pass through the time graph convolutional network
-        :param x: windowed BOLD signal to as input to the TGCN
-        :return: output of the TGCN forward pass
-        """
-
-        x = self.conv1(x, graph_list[0])
-
-        x = F.relu(x)
-
-        x = torch.matmul(mapping_list[1].type(dtype=torch.cuda.FloatTensor), x)
-
-        x = x.permute(2, 1, 0)
-
-        x = self.conv2(x, graph_list[1])
-
-        x = x.view(x.shape[0], -1)
-        x = self.fc1(x)
-
-        return F.log_softmax(x, dim=1)
-
-    def number_of_parameters(self):
-        return sum(p.numel() for p in self.parameters() if p.requires_grad)
-
 
 def experiment(args):
     """
@@ -112,11 +66,9 @@ def experiment(args):
     device = torch.device("cuda" if use_cuda else "cpu")
 
     parcellation = 'aparc'
-    batch_size = 1
-    resolutions = [70]
+    batch_size = 2
 
-    # coarsen = None
-    coarsen = SpectralGraphCoarsening(resolutions)
+    coarsen = None
 
     session_train = 'MOTOR_LR'
     train_set = HcpDataset(args, device, 'train', session_train, parcellation, coarsen=coarsen)
@@ -130,17 +82,14 @@ def experiment(args):
 
     data_shape = train_set.data_shape()
 
-    # model = NetTGCNBasic(data_shape)
-    model = NetTGCNBasic2(data_shape, resolutions)
+    model = NetTGCNBasic(data_shape)
 
     runner = Runner(device, train_loader, test_loader)
     runner.run(args, model)
 
 
 if __name__ == '__main__':
-    # ##################################
     experiment_name = __name__
-    # ##################################
 
     parser = argparse.ArgumentParser(description=experiment_name)
 

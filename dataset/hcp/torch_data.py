@@ -5,7 +5,7 @@ import configparser
 from util.path import get_root
 from util.logging import init_loggers
 
-from dataset.hcp.hcp_data import HcpReader
+from dataset.hcp.hcp_data import HcpReader, SkipSubjectException
 from dataset.hcp.transforms import SlidingWindow, TrivialCoarsening
 
 
@@ -80,19 +80,31 @@ class HcpDataset(torch.utils.data.Dataset):
     def __getitem__(self, idx):
 
         subject = self.subjects[idx]
-        data = self.reader.process_subject(subject, [self.session])
 
-        graph_list, mapping_list = self.coarsen(data['adjacency'])
+        try:
+            self.reader.logger.info("Feeding subject {:}".format(subject))
 
-        graph_list_tensor = self._to_tensor(graph_list)
-        mapping_list_tensor = self._to_tensor(mapping_list)
+            data = self.reader.process_subject(subject, [self.session])
 
-        cues = data['functional'][self.session]['cues']
-        ts = data['functional'][self.session]['ts']
-        X_windowed, Y_one_hot = self.transform(cues, ts, mapping_list)
+            graph_list, mapping_list = self.coarsen(data['adjacency'])
 
-        # return X_windowed, Y_one_hot, self._coos_tensor(graph_list), mapping_list
+            graph_list_tensor = self._to_tensor(graph_list)
+            mapping_list_tensor = self._to_tensor(mapping_list)
+
+            cues = data['functional'][self.session]['cues']
+            ts = data['functional'][self.session]['ts']
+            X_windowed, Y_one_hot = self.transform(cues, ts, mapping_list)
+
+        except SkipSubjectException:
+            self.reader.logger.warning("Skipping subject {:}".format(subject))
+
         return X_windowed, Y_one_hot, graph_list_tensor, mapping_list_tensor
+
+    def my_collate(self, batch):
+        "Puts each data field into a tensor with outer dimension batch size"
+        # batch = filter(lambda x: x is not None, batch)
+        batch = list(filter(lambda x: x is not None, batch))
+        return torch.utils.data.dataloader.default_collate(batch)
 
     def data_shape(self):
         shape = self.reader.get_adjacency(self.subjects[0]).shape[0]

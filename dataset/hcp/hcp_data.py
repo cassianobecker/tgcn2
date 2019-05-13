@@ -145,8 +145,9 @@ class HcpReader:
             ts = np.array(nib.load(furl).get_data())
             if self.delete_nii:
                 self.hcp_downloader.delete_dir(furl)
-        except:
+        except FileNotFoundError:
             self.logger.error("File " + furl + " not found, skipping subject.")
+            raise SkipSubjectException()
 
         self.logger.debug("Done")
 
@@ -327,3 +328,7 @@ class HcpReader:
         self.logger.debug("Done")
 
         return S_coo
+
+
+class SkipSubjectException(Exception):
+    pass
