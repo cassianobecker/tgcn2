@@ -15,7 +15,7 @@ class TrivialCoarsening(object):
         return [A.tocoo().row, A.tocoo().col]
 
 
-class SpectralGraphCoarsening(object):
+class SpectralCoarsening(object):
 
     def __init__(self, resolutions):
         self.resolutions = resolutions
@@ -43,12 +43,6 @@ class SpectralGraphCoarsening(object):
 
     def _to_coos(self, A):
         return [A.tocoo().row, A.tocoo().col]
-
-
-class MetisGraphCoarsening(object):
-
-    def __call__(self, graphs):
-        pass
 
 
 class SlidingWindow(object):

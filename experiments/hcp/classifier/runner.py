@@ -1,16 +1,31 @@
+import os
 import torch
 import torch.utils.data
 import torch.optim as optim
 import torch.nn.functional as F
 
+from util.logging import set_logger, get_logger
+from util.experiment import print_memory
+
 
 class Runner:
 
-    def __init__(self, device, train_loader, test_loader):
+    def __init__(self, device, params, train_loader, test_loader):
 
         self.train_loader = train_loader
         self.test_loader = test_loader
         self.device = device
+
+        log_furl = os.path.join(params['FILE']['experiment_path'], 'log', 'experiment.log')
+        set_logger('Experiment', params['LOGGING']['experiment_level'], log_furl)
+        self.experiment_logger = get_logger('Experiment')
+
+        log_furl = os.path.join(params['FILE']['experiment_path'], 'log', 'monitor.log')
+        set_logger('Monitor', params['LOGGING']['monitor_level'], log_furl)
+        self.monitor_logger = get_logger('Monitor')
+
+        self.monitor_logger.info('creating runner class')
+        # self.monitor_logger.info({section: dict(params[section]) for section in params.sections()})
 
     def run(self, args, model):
 
@@ -22,6 +37,8 @@ class Runner:
             model = torch.nn.DataParallel(model)
 
         model.to(self.device)
+
+        self.monitor_logger.info('starting experiment')
 
         for epoch in range(1, args.epochs + 1):
             train_loss = self.train_minibatch(args, model, epoch, optimizer, mini_batch=45, verbose=True)
@@ -42,14 +59,6 @@ class Runner:
         """
         Loads input data (BOLD signal windows and corresponding target motor tasks) from one patient at a time,
         and minibatches the windowed input signal while training the TGCN by optimizing for minimal training loss.
-        :param args: keyword arguments (see main())
-        :param model: PyTorch Module/DataParallel object to model
-        :param device: device to send the data to
-        :param train_loader: DataLoader that hosts the training data
-        :param optimizer: optimizing algorithm (default=Adam)
-        :param epoch: current epoch
-        :param mini_batch: number of minibatches to go through before taking an optimizer step
-        :param verbose: boolean to print out training progress
         :return: train_loss
         """
         train_loss = 0
@@ -58,38 +67,33 @@ class Runner:
         k = 1.
         w = torch.tensor([1., k, k, k, k, k]).to(self.device)
 
-        for batch_idx, (data, target, graph_list, perm) in enumerate(self.train_loader):
+        for batch_idx, (bold_ts, targets, graph_list, mapping_list, subject) in enumerate(self.train_loader):
 
-            if data is None:
+            if subject is None:
+                self.monitor_logger.warning('Empty data for subject {:}, skipping', subject[0])
                 continue
 
-            target = target.to(self.device)
+            self.monitor_logger.info('training on subject {:}'.format(subject[0]))
+            self.monitor_logger.info(print_memory())
 
+            targets = targets.to(self.device)
             graph_list = [c[0].to(self.device) for c in graph_list]
-
-            # if torch.cuda.device_count() > 1:
-            #     model.module.set_graph(graph_list, perm)
-            # else:
-            #     model.set_graph(graph_list, perm)
 
             temp_loss = 0
 
-            for i in range(len(data)):
+            for i in range(len(bold_ts)):
 
-                output = model(data[i].to(self.device), graph_list, perm)
+                self.monitor_logger.debug('before output: ' + print_memory())
+                output = model(bold_ts[i].to(self.device), graph_list, mapping_list)
+                self.monitor_logger.debug('after output: ' + print_memory())
+
+                expected = torch.argmax(targets[:, i], dim=1)
 
                 torch.cuda.synchronize()
-                expected = torch.argmax(target[:, i], dim=1)
-
                 loss = F.nll_loss(output, expected, weight=w)
-
-                # for p in model.named_parameters():
-                #     if p[0].split('.')[0][:2] == 'fc':
-                #         loss = loss + args.reg_weight * (p[1] ** 2).sum()
 
                 train_loss += loss.item()
                 temp_loss += loss.item()
-
                 loss = loss / mini_batch
                 loss.backward()
 
@@ -103,19 +107,13 @@ class Runner:
                            100. * (batch_idx + 1) / len(self.train_loader.dataset),
                     temp_loss))
 
-        train_loss /= (len(self.train_loader.dataset) * len(data))
+        train_loss /= (len(self.train_loader.dataset) * len(bold_ts))
 
         return train_loss
 
     def test_batch(self, args, model, epoch, verbose=True):
         """
         Evaluates the model trained in train_minibatch() on patients loaded from the test set.
-        :param args: keyword arguments (see main())
-        :param model: PyTorch Module/DataParallel object to model
-        :param device: device to send the data to
-        :param test_loader: DataLoader that hosts the test data
-        :param epoch: current epoch
-        :param verbose: boolean to print out test progress
         :return: test_loss and correct, the # of correct predictions
         """
         model.eval()
@@ -127,16 +125,17 @@ class Runner:
         targets = torch.empty(0, dtype=torch.long).to(self.device)
 
         with torch.no_grad():
-            for batch_idx, (data_t, target_t, coos, perm) in enumerate(self.test_loader):
+
+            for batch_idx, (data_t, target_t, coos, perm, subject) in enumerate(self.test_loader):
+
+                if subject is None:
+                    self.monitor_logger.warning('dmpty test batch number {:}, skipping', batch_idx)
+                    continue
+
+                self.monitor_logger.info('testing on subject {:}'.format(subject[0]))
 
                 target = target_t.to(self.device)
-
                 coos = [c[0].to(self.device) for c in coos]
-
-                # if torch.cuda.device_count() > 1:
-                #     model.module.set_graph(coos, perm)
-                # else:
-                #     model.set_graph(coos, perm)
 
                 for i in range(len(data_t)):
                     output = model(data_t[i].to(self.device), coos, perm)

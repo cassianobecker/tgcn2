@@ -1,47 +1,28 @@
 import os
 import torch
+import torch.utils.data
 import configparser
 
 from util.path import get_root
-from util.logging import init_loggers
+from util.logging import get_logger, set_logger
 
 from dataset.hcp.hcp_data import HcpReader, SkipSubjectException
 from dataset.hcp.transforms import SlidingWindow, TrivialCoarsening
 
 
-def get_settings():
+def get_database_settings():
     """
     Creates a ConfigParser object with server/directory/credentials/logging info from preconfigured directory.
     :return: settings, a ConfigParser object
     """
     settings = configparser.ConfigParser()
-    settings_dir = os.path.join(get_root(), 'dataset', 'hcp', 'conf', 'hcp_database.ini')
-    settings.read(settings_dir)
+    settings_furl = os.path.join(get_root(), 'dataset', 'hcp', 'conf', 'hcp_database.ini')
+    settings.read(settings_furl)
     return settings
 
 
-def get_params():
-    """
-    Creates a ConfigParser object with parameter info for reading fMRI data.
-    :return: params, a ConfigParser object
-    """
-    params = configparser.ConfigParser()
-    params_dir = os.path.join(get_root(), 'dataset', 'hcp', 'conf', 'hcp_experiment.ini')
-    params.read(params_dir)
-    return params
-
-
-def loaders(device, session, parcellation=None, coarsen=None, batch_size=1):
-    """
-    Creates train and test datasets and places them in a DataLoader to iterate over.
-    """
-    train_set = HcpDataset(device, 'train', session, parcellation, coarsen=coarsen)
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=False)
-
-    test_set = HcpDataset(device, 'test', session, parcellation, coarsen=coarsen)
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
-
-    return train_loader, test_loader
+def empty_hcp_record():
+    return None, None, None, None, None
 
 
 class HcpDataset(torch.utils.data.Dataset):
@@ -49,22 +30,21 @@ class HcpDataset(torch.utils.data.Dataset):
     A PyTorch Dataset to host and process the BOLD signal and the associated motor tasks
     """
 
-    def __init__(self, args, device, regime, session, parcellation, coarsen=None):
+    def __init__(self, params, device, regime, coarsen=None):
 
-        settings = get_settings()
-        params = get_params()
+        database_settings = get_database_settings()
 
-        init_loggers(settings)
+        log_furl = os.path.join(params['FILE']['experiment_path'], 'log', 'downloader.log')
+        set_logger('HcpDataset', database_settings['LOGGING']['dataloader_level'], log_furl)
+        self.logger = get_logger('HcpDataset')
+        self.logger.info('*** starting new {:} dataset'.format(regime))
 
         self.device = device
-        self.session = session
+        self.session = params['SESSION'][regime]
 
-        self.reader = HcpReader(settings, params)
+        self.reader = HcpReader(database_settings, params)
 
-        if parcellation is not None:
-            self.reader.parcellation = parcellation
-
-        list_url = os.path.join(args.experiment_path, 'conf', regime, session, 'subjects.txt')
+        list_url = os.path.join(params['FILE']['experiment_path'], 'conf', regime, self.session, 'subjects.txt')
         self.subjects = self.reader.load_subject_list(list_url)
 
         if coarsen is None:
@@ -73,16 +53,17 @@ class HcpDataset(torch.utils.data.Dataset):
 
         self.transform = SlidingWindow(params['TIME_SERIES'], coarsen=coarsen)
 
-
     def __len__(self):
         return len(self.subjects)
 
     def __getitem__(self, idx):
 
+        x_windowed, y_one_hot, graph_list_tensor, mapping_list_tensor, _ = empty_hcp_record()
+
         subject = self.subjects[idx]
 
         try:
-            self.reader.logger.info("Feeding subject {:}".format(subject))
+            self.reader.logger.info("feeding subject {:}".format(subject))
 
             data = self.reader.process_subject(subject, [self.session])
 
@@ -93,18 +74,12 @@ class HcpDataset(torch.utils.data.Dataset):
 
             cues = data['functional'][self.session]['cues']
             ts = data['functional'][self.session]['ts']
-            X_windowed, Y_one_hot = self.transform(cues, ts, mapping_list)
+            x_windowed, y_one_hot = self.transform(cues, ts, mapping_list)
 
         except SkipSubjectException:
-            self.reader.logger.warning("Skipping subject {:}".format(subject))
+            self.reader.logger.warning("skipping subject {:}".format(subject))
 
-        return X_windowed, Y_one_hot, graph_list_tensor, mapping_list_tensor
-
-    def my_collate(self, batch):
-        "Puts each data field into a tensor with outer dimension batch size"
-        # batch = filter(lambda x: x is not None, batch)
-        batch = list(filter(lambda x: x is not None, batch))
-        return torch.utils.data.dataloader.default_collate(batch)
+        return x_windowed, y_one_hot, graph_list_tensor, mapping_list_tensor, subject
 
     def data_shape(self):
         shape = self.reader.get_adjacency(self.subjects[0]).shape[0]
@@ -117,3 +92,20 @@ class HcpDataset(torch.utils.data.Dataset):
     def _to_tensor(self, graph_list):
         coos = [torch.tensor(graph, dtype=torch.long).to(self.device) for graph in graph_list]
         return coos
+
+
+class HcpDataLoader(torch.utils.data.DataLoader):
+
+    def __init__(self, *args, **kwargs):
+        # batch size must be always 1 (per subject)
+        batch_size = 1
+        super(HcpDataLoader, self).__init__(*args, batch_size=batch_size, **kwargs)
+
+    def collate_fn(self, batch):
+        # filter empty items
+        # batch = list(filter(lambda x: x[0] is not None, batch))
+        # if len(batch) == 0:
+        if batch[0][0] is None:
+            return empty_hcp_record()
+        else:
+            return torch.utils.data.dataloader.default_collate(batch)

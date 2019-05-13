@@ -10,12 +10,12 @@ import torch.nn.functional as F
 from util.torch import seed_everything
 from util.path import get_dir
 
-from dataset.hcp.torch_data import HcpDataset
-from dataset.hcp.transforms import SpectralGraphCoarsening
+from dataset.hcp.torch_data import HcpDataset, HcpDataLoader
+from dataset.hcp.transforms import SpectralCoarsening
 
 from nn.chebnet import ChebTimeConv
 
-from experiments.hcp.classifier.train_and_test import Runner
+from experiments.hcp.classifier.runner import Runner
 
 
 class NetTGCNTwoLayer(torch.nn.Module):
@@ -79,17 +79,18 @@ def experiment(args):
     batch_size = 1
     resolutions = [70]
 
-    coarsen = SpectralGraphCoarsening(resolutions)
+    coarsen = SpectralCoarsening(resolutions)
 
     session_train = 'MOTOR_LR'
     train_set = HcpDataset(args, device, 'train', session_train, parcellation, coarsen=coarsen)
     # train_set.self_check()
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=batch_size, shuffle=False)
+    train_loader = HcpDataLoader(train_set, batch_size=batch_size, shuffle=False)
 
     session_test = 'MOTOR_LR'
     test_set = HcpDataset(args, device, 'test', session_test, parcellation, coarsen=coarsen)
     # test_set.self_check()
-    test_loader = torch.utils.data.DataLoader(test_set, batch_size=batch_size, shuffle=False)
+    test_loader = HcpDataLoader(test_set, batch_size=batch_size, shuffle=False)
+
 
     data_shape = train_set.data_shape()
 

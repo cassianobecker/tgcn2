@@ -9,7 +9,7 @@ import scipy.sparse
 
 from sklearn.preprocessing import StandardScaler
 
-from util.logging import get_logger
+from util.logging import get_logger, set_logger
 from util.path import get_root
 
 from dataset.hcp.downloaders import HcpDownloader, DtiDownloader
@@ -18,39 +18,43 @@ from dataset.hcp.converter import convert_surf_to_nifti
 
 class HcpReader:
 
-    def __init__(self, settings, params):
+    def __init__(self, database_settings, params):
 
-        self.logger = get_logger('HcpDataset')
-        self.local_folder = settings['DIRECTORIES']['local_server_directory']
-        self.delete_nii = strtobool(settings['DIRECTORIES']['delete_after_downloading'])
+        log_furl = os.path.join(params['FILE']['experiment_path'], 'log', 'downloader.log')
+        set_logger('HcpReader', database_settings['LOGGING']['dataloader_level'], log_furl)
+        self.logger = get_logger('HcpReader')
+
+        self.local_folder = database_settings['DIRECTORIES']['local_server_directory']
+        self.delete_nii = strtobool(database_settings['DIRECTORIES']['delete_after_downloading'])
+        self.hcp_downloader = HcpDownloader(database_settings)
+        self.dti_downloader = DtiDownloader(database_settings)
+        nib.imageglobals.logger = set_logger('Nibabel', database_settings['LOGGING']['nibabel_level'], log_furl)
 
         self.parcellation = params['PARCELLATION']['parcellation']
         self.inflation = params['SURFACE']['inflation']
         self.tr = float(params['FMRI']['tr'])
+        self.fh = float(params['FMRI']['physio_sampling_rate'])
         self.physio_sampling_rate = int(params['FMRI']['physio_sampling_rate'])
-        self.regress_physio = params['FMRI']['regress_physio']
-
-        self.hcp_downloader = HcpDownloader(settings)
-        self.dti_downloader = DtiDownloader(settings)
+        self.regress_physio = strtobool(params['FMRI']['regress_physio'])
 
     def load_subject_list(self, list_url):
 
-        self.logger.info('Loading subjects from ' + list_url)
+        self.logger.info('loading subjects from ' + list_url)
 
         with open(list_url, 'r') as f:
             subjects = [s.strip() for s in f.readlines()]
 
-        self.logger.info('Loaded ' + str(len(subjects)) + ' subjects from: ' + list_url)
+        self.logger.info('loaded ' + str(len(subjects)) + ' subjects from: ' + list_url)
 
         return subjects
 
     def process_subject(self, subject, tasks):
 
-        self.logger.info('Processing subject {}'.format(subject))
+        self.logger.info('processing subject {}'.format(subject))
 
         task_list = dict()
         for task in tasks:
-            self.logger.debug('Processing task {} ...'.format(task))
+            self.logger.debug('processing task {} ...'.format(task))
             task_dict = dict()
 
             task_dict['ts'] = self.get_fmri_time_series(subject, task)
@@ -73,10 +77,10 @@ class HcpReader:
     def get_vitals(self, subject, task):
 
         vitals = dict()
-        if self.regress_physio:
+        if self.regress_physio is True:
             try:
 
-                self.logger.debug("Reading vitals for " + subject)
+                self.logger.debug("reading vitals for " + subject)
 
                 fname = 'tfMRI_' + task + '_Physio_log.txt'
                 furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, fname)
@@ -87,11 +91,13 @@ class HcpReader:
                 vitals['heart'] = heart
                 vitals['resp'] = resp
 
-                self.logger.debug("Done")
+                self.logger.debug("done")
 
-            except:
-                self.logger.warning('Subject ' + subject + ' does not have physiological information, skipping')
-                # TODO: Remove subject from list
+            except FileNotFoundError:
+                msg = 'subject ' + subject + ' does not have physiological information'
+                self.logger.warning(msg)
+                raise SkipSubjectException(msg)
+
         return vitals
 
     def read_vitals(self, furl):
@@ -101,8 +107,10 @@ class HcpReader:
                 phy = [line.strip().split('\t') for line in inp]
                 resp = [int(phy_line[1]) for phy_line in phy]
                 heart = [int(phy_line[2]) for phy_line in phy]
-        except:
-            self.logger.error("File " + os.path.join(self.local_folder, furl) + " not found")
+        except FileNotFoundError:
+            msg = "file " + os.path.join(self.local_folder, furl) + " not found"
+            self.logger.error(msg)
+            raise SkipSubjectException(msg)
 
         return self.decimate(heart), self.decimate(resp)
 
@@ -133,7 +141,7 @@ class HcpReader:
 
     def load_raw_time_series(self, subject, task):
 
-        self.logger.debug("Loading time series for " + subject)
+        self.logger.debug("loading time series for " + subject)
 
         fname = 'tfMRI_' + task + '_Atlas.dtseries.nii'
         furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'tfMRI_' + task, fname)
@@ -146,16 +154,17 @@ class HcpReader:
             if self.delete_nii:
                 self.hcp_downloader.delete_dir(furl)
         except FileNotFoundError:
-            self.logger.error("File " + furl + " not found, skipping subject.")
-            raise SkipSubjectException()
+            msg = "file " + furl + " not found."
+            self.logger.error(msg)
+            raise SkipSubjectException(msg)
 
-        self.logger.debug("Done")
+        self.logger.debug("done")
 
         return ts
 
     def get_parcellation(self, subject):
 
-        self.logger.debug("Reading parcellation for " + subject)
+        self.logger.debug("reading parcellation for " + subject)
 
         fpath = os.path.join('HCP_1200', subject, 'MNINonLinear', 'fsaverage_LR32k')
 
@@ -166,10 +175,14 @@ class HcpReader:
 
         self.hcp_downloader.load(parc_furl)
 
+        parc_vector, parc_labels = None, None
+
         try:
             parc_obj = nib.load(os.path.join(self.local_folder, parc_furl))
-        except:
-            self.logger.error("File " + os.path.join(self.local_folder, parc_furl) + " not found")
+        except FileNotFoundError:
+            msg = "File " + os.path.join(self.local_folder, parc_furl) + " not found"
+            self.logger.error(msg)
+            raise SkipSubjectException(msg)
 
         if self.parcellation == 'aparc':
             parc_vector = np.array(parc_obj.get_data()[0], dtype='int')
@@ -181,17 +194,18 @@ class HcpReader:
             parc_vector = np.array(range(n_regions))
             parc_labels = [(i, i) for i in range(n_regions)]
 
-        self.logger.debug("Done")
+        self.logger.debug("done")
 
         return parc_vector, parc_labels
 
     def parcellate(self, ts, parc_vector, parc_labels):
 
-        self.logger.debug("Performing parcellation")
+        self.logger.debug("performing parcellation")
 
         tst = ts[:, :parc_vector.shape[0]]
 
         parc_idx = list(np.unique(parc_vector))
+        x_parc = None
 
         bad_regions = [label[0] for label in parc_labels if label[1] == '???']
         for bad_region in bad_regions:
@@ -204,7 +218,7 @@ class HcpReader:
         if self.parcellation == 'dense':
             x_parc = tst.T
 
-        self.logger.debug("Done")
+        self.logger.debug("done")
 
         return x_parc
 
@@ -217,7 +231,7 @@ class HcpReader:
 
     def get_cue_array(self, subject, task, ts_length):
 
-        self.logger.debug("Reading cue signals for " + subject)
+        self.logger.debug("reading cue signals for " + subject)
 
         cue_names = ['cue', 'lf', 'lh', 'rf', 'rh', 't']
         cue_events = dict()
@@ -228,15 +242,20 @@ class HcpReader:
             cue_events[cue_name] = self.read_cue_events_file(os.path.join(self.local_folder, furl))
 
         cue_array = self.encode_cues(cue_events, ts_length)
-        self.logger.debug("Done")
+        self.logger.debug("done")
 
         return cue_array[1:]
 
     def read_cue_events_file(self, furl):
-        with open(furl) as inp:
-            evs = [line.strip().split('\t') for line in inp]
-            evs_t = [int(float(evi[0]) / self.tr) for evi in evs]
 
+        try:
+            with open(furl) as inp:
+                evs = [line.strip().split('\t') for line in inp]
+                evs_t = [int(float(evi[0]) / self.tr) for evi in evs]
+        except FileNotFoundError:
+            msg = "events file " + os.path.join(self.local_folder, furl) + " not found"
+            self.logger.error(msg)
+            raise SkipSubjectException(msg)
         return evs_t
 
     def encode_cues(self, cue_events, ts_length):
@@ -252,6 +271,8 @@ class HcpReader:
 
     def get_adjacency(self, subject):
 
+        adj = None
+
         if self.parcellation == 'aparc':
             adj = self.get_adjacency_dti(subject)
 
@@ -262,17 +283,17 @@ class HcpReader:
 
     def get_adjacency_mesh(self, subject):
 
-        self.logger.debug("Reading mesh adjacency matrix for" + subject)
+        self.logger.debug("reading mesh adjacency matrix for" + subject)
 
-        self.logger.debug("Processing left hemisphere edges for " + subject)
+        self.logger.debug("processing left hemisphere edges for " + subject)
         rows_L, cols_L, coords_L = self.get_adjacency_mesh_hemi('L', subject)
-        self.logger.debug("Done")
+        self.logger.debug("done")
 
-        self.logger.debug("Processing right hemisphere edges for " + subject)
+        self.logger.debug("processing right hemisphere edges for " + subject)
         rows_R, cols_R, coords_R = self.get_adjacency_mesh_hemi('R', subject)
-        self.logger.debug("Done")
+        self.logger.debug("done")
 
-        self.logger.debug("Processing coordinates for " + subject)
+        self.logger.debug("processing coordinates for " + subject)
 
         data = np.ones(len(rows_L) + len(rows_R))
         A = scipy.sparse.coo_matrix((data, (rows_L + rows_R, cols_L + cols_R)))
@@ -280,7 +301,7 @@ class HcpReader:
         new_coords = np.vstack((coords_L, coords_R))
         # new_coords = filter_surf_vertices(coords)
 
-        self.logger.debug("Done")
+        self.logger.debug("done")
 
         return A, new_coords
 
@@ -292,8 +313,10 @@ class HcpReader:
 
         try:
             img = nib.load(os.path.join(self.local_folder, furl))
-        except:
-            self.logger.error("File " + os.path.join(self.local_folder, furl) + " not found")
+        except FileNotFoundError:
+            msg = "surface mesh file " + os.path.join(self.local_folder, furl) + " not found"
+            self.logger.error(msg)
+            raise SkipSubjectException(msg)
 
         coords = img.darrays[0].data
         faces = img.darrays[1].data.astype(int)
@@ -304,31 +327,42 @@ class HcpReader:
 
     def get_adjacency_dti(self, subject):
 
-        self.logger.debug("Reading dti adjacency matrix for " + subject)
+        self.logger.debug("reading dti adjacency matrix for " + subject)
+
         furl = os.path.join('HCP_1200', subject, 'MNINonLinear', 'Results', 'dMRI_CONN')
         file = os.path.join(furl, subject + '.aparc.a2009s.dti.conn.mat')
         token_url = os.path.join(furl, subject + '_404_token.txt')
 
         self.dti_downloader.load(file, token_url)
 
+        # looks for local subject-specific DTI matrix
         try:
-            S = sio.loadmat(os.path.join(self.local_folder, file))
-            S = S.get('S')
-        except:
-            file_dir = os.path.join(get_root(), 'dataset/hcp/res/average1.aparc.a2009s.dti.conn.mat')
+            dti_matrix = sio.loadmat(os.path.join(self.local_folder, file)).get('S')
+
+        except FileNotFoundError:
+
+            # if not found, loads average DTI matrix from local resources directory
+            msg = "specific DTI matrix for " + subject + "," + self.parcellation + " not available, using average."
+            self.logger.info(msg)
+
+            relative_avg_furl = os.path.join('dataset', 'hcp', 'res', 'average1.aparc.a2009s.dti.conn.mat')
+            avg_furl = os.path.join(get_root(), relative_avg_furl)
+
             try:
-                S = sio.loadmat(file_dir).get('S')
+                dti_matrix = sio.loadmat(avg_furl).get('S')
+
             except:
-                self.logger.error("File " + file_dir + " not found")
-            self.logger.info(
-                "Local DTI adjacency matrix for subject: " + subject + " in parcellation: " + self.parcellation +
-                " not available, using average adjacency matrix.")
+                msg = self.logger.error("average DTI file " + avg_furl + " not found")
+                self.logger.error(msg)
+                raise SkipSubjectException(msg)
 
-        S_coo = scipy.sparse.coo_matrix(S)
-        self.logger.debug("Done")
+        dti_coo = scipy.sparse.coo_matrix(dti_matrix)
 
-        return S_coo
+        self.logger.debug("done")
+
+        return dti_coo
 
 
 class SkipSubjectException(Exception):
-    pass
+    def __init(self, msg):
+        super(SkipSubjectException, self).__init__(msg)

@@ -1,16 +1,14 @@
 import logging
-import os
+import logging.handlers
 import sys
 
-import nibabel as nib
 
-from util.path import get_root
-
-LOG_FILE = os.path.join(get_root(), 'logger.log')
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', filename=LOG_FILE)
+# LOG_FILE = os.path.join(get_root(), 'logger.log')
+# logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', filename=LOG_FILE)
+# [logging.getLogger(name) for name in logging.root.manager.loggerDict]
 
 
-def set_logger(name, level):
+def set_logger(name, level, log_furl=None):
     """
     Creates/retrieves a Logger object with the desired name and level.
     :param name: Name of logger
@@ -19,10 +17,16 @@ def set_logger(name, level):
     """
     logger = logging.getLogger(name)
 
-    formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(formatter)
-    logger.addHandler(handler)
+    if not len(logger.handlers):
+        formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        if log_furl is None:
+            handler = logging.StreamHandler(sys.stdout)
+        else:
+            handler = logging.handlers.RotatingFileHandler(log_furl, maxBytes=10 * 1024 * 1024, backupCount=5)
+
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
     level_dict = {
         'debug': logging.DEBUG,
         'info': logging.INFO,
@@ -30,7 +34,9 @@ def set_logger(name, level):
         'error': logging.ERROR,
         'critical': logging.CRITICAL
     }
+
     logger.setLevel(level_dict[level])
+
     return logger
 
 
@@ -38,8 +44,3 @@ def get_logger(name):
     return logging.getLogger(name)
 
 
-def init_loggers(settings):
-    set_logger('HcpDownloader', settings['LOGGING']['downloader_logging_level'])
-    set_logger('HcpDataset', settings['LOGGING']['dataloader_logging_level'])
-    set_logger('DtiDownloader', settings['LOGGING']['downloader_logging_level'])
-    nib.imageglobals.logger = set_logger('Nibabel', settings['LOGGING']['nibabel_logging_level'])
