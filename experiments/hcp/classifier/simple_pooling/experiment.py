@@ -5,10 +5,10 @@ import argparse
 
 import torch
 import torch.utils.data
-import torch.nn.functional as F
+import torch.nn.functional as fuctional
 
 from util.torch import seed_everything
-from util.path import get_dir
+from util.experiment import get_experiment_params
 
 from dataset.hcp.torch_data import HcpDataset, HcpDataLoader
 from dataset.hcp.transforms import SpectralCoarsening
@@ -47,7 +47,7 @@ class NetTGCNTwoLayer(torch.nn.Module):
 
         x = self.conv1(x, graph_list[0])
 
-        x = F.relu(x)
+        x = fuctional.relu(x)
 
         x = torch.matmul(mapping_list[1].type(dtype=torch.cuda.FloatTensor), x)
 
@@ -58,13 +58,13 @@ class NetTGCNTwoLayer(torch.nn.Module):
         x = x.view(x.shape[0], -1)
         x = self.fc1(x)
 
-        return F.log_softmax(x, dim=1)
+        return fuctional.log_softmax(x, dim=1)
 
     def number_of_parameters(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
 
 
-def experiment(args):
+def experiment(params, args):
     """
     Sets up the experiment environment (loggers, data loaders, model, optimizer and scheduler) and initiates the
     train/test process for the model.
@@ -75,37 +75,32 @@ def experiment(args):
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    parcellation = 'aparc'
-    batch_size = 1
     resolutions = [70]
-
     coarsen = SpectralCoarsening(resolutions)
 
-    session_train = 'MOTOR_LR'
-    train_set = HcpDataset(args, device, 'train', session_train, parcellation, coarsen=coarsen)
-    # train_set.self_check()
-    train_loader = HcpDataLoader(train_set, batch_size=batch_size, shuffle=False)
+    train_set = HcpDataset(params, device, 'train', coarsen=coarsen)
+    train_loader = HcpDataLoader(train_set, shuffle=False)
 
-    session_test = 'MOTOR_LR'
-    test_set = HcpDataset(args, device, 'test', session_test, parcellation, coarsen=coarsen)
-    # test_set.self_check()
-    test_loader = HcpDataLoader(test_set, batch_size=batch_size, shuffle=False)
-
+    test_set = HcpDataset(params, device, 'test', coarsen=coarsen)
+    test_loader = HcpDataLoader(test_set, shuffle=False)
 
     data_shape = train_set.data_shape()
 
     model = NetTGCNTwoLayer(data_shape, resolutions)
 
-    runner = Runner(device, train_loader, test_loader)
+    runner = Runner(device, params, train_loader, test_loader)
     runner.run(args, model)
 
 
 if __name__ == '__main__':
-    # ##################################
-    experiment_name = __name__
-    # ##################################
+    params = get_experiment_params(__file__, __name__)
 
-    parser = argparse.ArgumentParser(description=experiment_name)
+    os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
+
+    seed_everything(0)
+    torch.manual_seed(0)
+
+    parser = argparse.ArgumentParser(description=__name__)
 
     parser.add_argument('--batch-size', type=int, default=1, metavar='N',
                         help='input batch size for training (default: 64)')
@@ -128,11 +123,5 @@ if __name__ == '__main__':
     args = parser.parse_args()
 
     args.reg_weight = 0.
-    args.experiment_path = get_dir(__file__)
 
-    os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
-
-    seed_everything(0)
-    torch.manual_seed(args.seed)
-
-    experiment(args)
+    experiment(params, args)

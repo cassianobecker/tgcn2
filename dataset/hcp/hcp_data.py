@@ -153,7 +153,7 @@ class HcpReader:
             ts = np.array(nib.load(furl).get_data())
             if self.delete_nii:
                 self.hcp_downloader.delete_dir(furl)
-        except FileNotFoundError:
+        except:
             msg = "file " + furl + " not found."
             self.logger.error(msg)
             raise SkipSubjectException(msg)

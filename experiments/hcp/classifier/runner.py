@@ -4,6 +4,7 @@ import torch.utils.data
 import torch.optim as optim
 import torch.nn.functional as F
 
+from sklearn.metrics import confusion_matrix, accuracy_score
 from util.logging import set_logger, get_logger
 from util.experiment import print_memory
 
@@ -25,75 +26,83 @@ class Runner:
         self.monitor_logger = get_logger('Monitor')
 
         self.monitor_logger.info('creating runner class')
-        # self.monitor_logger.info({section: dict(params[section]) for section in params.sections()})
+
+        self.name = params['FILE']['experiment_name']
+        self.path = params['FILE']['experiment_path']
+
+        k = 1.
+        self.w = torch.tensor([1., k, k, k, k, k]).to(self.device)
 
     def run(self, args, model):
 
-        optimizer = optim.Adam(model.parameters(), lr=args.lr)
+        mini_batch = 10
 
+        optimizer = optim.Adam(model.parameters(), lr=args.lr)
         scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
 
         if torch.cuda.device_count() > 1:
             model = torch.nn.DataParallel(model)
-
         model.to(self.device)
 
         self.monitor_logger.info('starting experiment')
 
         for epoch in range(1, args.epochs + 1):
-            train_loss = self.train_minibatch(args, model, epoch, optimizer, mini_batch=45, verbose=True)
+
+            train_loss_value, predictions, targets = self.train_minibatch(model, epoch, optimizer, mini_batch)
+
+            self.print_eval(train_loss_value, predictions, targets, idx=epoch, header='Train epoch:')
+            self.print_confusion_matrix(predictions, targets)
+
             scheduler.step()
 
-            test_loss, correct = self.test_batch(args, model, epoch)
+            test_loss_value, predictions, targets = self.test_batch(model, epoch)
 
-            print('Epoch: {} Training loss: {:1.3e}, Test loss: {:1.3e}, Accuracy: {}/{} ({:.2f}%)'.format(
-                epoch, train_loss, test_loss, correct,
-                len(self.test_loader.dataset) * 270,
-                100. * correct / (len(self.test_loader.dataset) * 270)
-            ))
+            self.print_eval(test_loss_value, predictions, targets, idx=epoch, header='Test epoch:')
+            self.print_confusion_matrix(predictions, targets)
 
-        if args.save_model:
-            torch.save(model.state_dict(), "hcp_cnn_1gpu2.pt")
+            if args.save_model:
+                model_furl = os.path.join(self.path, 'out', 'model_epoch_{:}'.format(epoch) + '.pt')
+                torch.save(model.state_dict(), model_furl)
 
-    def train_minibatch(self, args, model, epoch, optimizer, mini_batch=10, verbose=True):
+    def train_minibatch(self, model, epoch, optimizer, mini_batch=10):
         """
         Loads input data (BOLD signal windows and corresponding target motor tasks) from one patient at a time,
         and minibatches the windowed input signal while training the TGCN by optimizing for minimal training loss.
         :return: train_loss
         """
-        train_loss = 0
         model.train()
 
-        k = 1.
-        w = torch.tensor([1., k, k, k, k, k]).to(self.device)
+        train_loss_value = 0
+        predictions = []
+        targets = []
 
-        for batch_idx, (bold_ts, targets, graph_list, mapping_list, subject) in enumerate(self.train_loader):
+        for batch_idx, (bold_ts, cues, graph_list, mapping_list, subject) in enumerate(self.train_loader):
 
             if subject is None:
-                self.monitor_logger.warning('Empty data for subject {:}, skipping', subject[0])
+                self.monitor_logger.warning('empty training batch, skipping')
                 continue
 
-            self.monitor_logger.info('training on subject {:}'.format(subject[0]))
+            self.monitor_logger.info('training on subject {:} ({:} of {:})'.
+                                     format(subject[0], batch_idx + 1, len(self.train_loader.dataset.subjects)))
+
             self.monitor_logger.info(print_memory())
 
-            targets = targets.to(self.device)
-            graph_list = [c[0].to(self.device) for c in graph_list]
+            cues = cues.to(self.device)
+            graph_list = [g[0].to(self.device) for g in graph_list]
 
-            temp_loss = 0
+            batch_loss_value = 0
+            batch_predictions = []
+            batch_targets = []
 
             for i in range(len(bold_ts)):
 
-                self.monitor_logger.debug('before output: ' + print_memory())
                 output = model(bold_ts[i].to(self.device), graph_list, mapping_list)
-                self.monitor_logger.debug('after output: ' + print_memory())
-
-                expected = torch.argmax(targets[:, i], dim=1)
+                target = torch.argmax(cues[:, i], dim=1)
+                prediction = output.max(1, keepdim=True)[1][0]
 
                 torch.cuda.synchronize()
-                loss = F.nll_loss(output, expected, weight=w)
 
-                train_loss += loss.item()
-                temp_loss += loss.item()
+                loss = F.nll_loss(output, target, weight=self.w)
                 loss = loss / mini_batch
                 loss.backward()
 
@@ -101,64 +110,70 @@ class Runner:
                     optimizer.step()
                     optimizer.zero_grad()
 
-            if verbose:
-                print('Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                    epoch, batch_idx + 1, len(self.train_loader.dataset),
-                           100. * (batch_idx + 1) / len(self.train_loader.dataset),
-                    temp_loss))
+                train_loss_value += loss.item()
+                predictions.extend(prediction.tolist())
+                targets.extend(target.tolist())
 
-        train_loss /= (len(self.train_loader.dataset) * len(bold_ts))
+                batch_loss_value += loss.item()
+                batch_predictions.extend(prediction.tolist())
+                batch_targets.extend(target.tolist())
 
-        return train_loss
+            self.print_eval(batch_loss_value, batch_predictions, batch_targets, idx=batch_idx, header='batch idx:')
 
-    def test_batch(self, args, model, epoch, verbose=True):
+        return train_loss_value, predictions, targets
+
+    def test_batch(self, model, epoch):
         """
         Evaluates the model trained in train_minibatch() on patients loaded from the test set.
         :return: test_loss and correct, the # of correct predictions
         """
         model.eval()
 
-        test_loss = 0
-        correct = 0
-
-        preds = torch.empty(0, dtype=torch.long).to(self.device)
-        targets = torch.empty(0, dtype=torch.long).to(self.device)
+        test_loss_value = 0
+        predictions = []
+        targets = []
 
         with torch.no_grad():
 
-            for batch_idx, (data_t, target_t, coos, perm, subject) in enumerate(self.test_loader):
+            for batch_idx, (bold_ts, cues, graph_list, mapping_list, subject) in enumerate(self.test_loader):
 
                 if subject is None:
-                    self.monitor_logger.warning('dmpty test batch number {:}, skipping', batch_idx)
+                    self.monitor_logger.warning('empty test batch, skipping')
                     continue
 
-                self.monitor_logger.info('testing on subject {:}'.format(subject[0]))
+                self.monitor_logger.info('testing on subject {:} ({:} of {:})'.
+                                         format(subject[0], batch_idx + 1, len(self.test_loader.dataset.subjects)))
 
-                target = target_t.to(self.device)
-                coos = [c[0].to(self.device) for c in coos]
+                cues = cues.to(self.device)
+                graph_list = [g[0].to(self.device) for g in graph_list]
 
-                for i in range(len(data_t)):
-                    output = model(data_t[i].to(self.device), coos, perm)
+                for i in range(len(bold_ts)):
+                    output = model(bold_ts[i].to(self.device), graph_list, mapping_list)
+                    target = torch.argmax(cues[:, i], dim=1)
+                    prediction = output.max(1, keepdim=True)[1][0]
 
                     torch.cuda.synchronize()
 
-                    expected = torch.argmax(target[:, i], dim=1)
-                    test_loss += F.nll_loss(output, expected, reduction='sum').item()
+                    test_loss_value += F.nll_loss(output, target, reduction='sum').item()
 
-                    pred = output.max(1, keepdim=True)[1]  # get the index of the max log-probability
+                    predictions.extend(prediction.tolist())
+                    targets.extend(target.tolist())
 
-                    preds = torch.cat((pred, preds))
-                    targets = torch.cat((expected, targets))
-                    correct += pred.eq(expected.view_as(pred)).sum().item()
+        return test_loss_value, predictions, targets
 
-        test_loss /= (len(self.test_loader.dataset) * len(data_t))
+    def print_eval(self, loss_value, predictions, targets, idx=None, header=''):
 
-        if verbose:
-            print('Test Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}'.format(
-                epoch, batch_idx + 1,
-                len(self.test_loader.dataset),
-                       100. * (batch_idx + 1) / len(self.test_loader.dataset),
-                test_loss
-            ))
+        accuracy = accuracy_score(targets, predictions)
 
-        return test_loss, correct
+        msg = f'| {header:14s}' + f'{idx:3d} | '
+        msg = msg + f'loss: {loss_value:1.3e} | '
+        msg = msg + f'accuracy: {accuracy: 1.3f} |'
+
+        self.experiment_logger.info(msg)
+        print(msg)
+
+    def print_confusion_matrix(self, predictions, targets):
+
+        cm = confusion_matrix(targets, predictions)
+        self.experiment_logger.info(cm)
+        print(cm)

@@ -2,7 +2,6 @@ import logging
 import logging.handlers
 import sys
 
-
 # LOG_FILE = os.path.join(get_root(), 'logger.log')
 # logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', filename=LOG_FILE)
 # [logging.getLogger(name) for name in logging.root.manager.loggerDict]
@@ -11,9 +10,6 @@ import sys
 def set_logger(name, level, log_furl=None):
     """
     Creates/retrieves a Logger object with the desired name and level.
-    :param name: Name of logger
-    :param level: Level of logger
-    :return: logger, the configured Logger object
     """
     logger = logging.getLogger(name)
 

@@ -28,7 +28,7 @@ def print_memory():
     available = psutil.virtual_memory().available / divider
     used = psutil.virtual_memory().used / divider
 
-    mem_str = 'memory usage: {:.2f}%, used {:.1f}MB, available {:.1f}MB' \
+    mem_str = 'memory usage: {:.2f}%, used: {:.1f} MB, available: {:.1f} MB' \
         .format(percent, used, available)
 
     return mem_str

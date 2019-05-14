@@ -99,13 +99,13 @@ class HcpDataLoader(torch.utils.data.DataLoader):
     def __init__(self, *args, **kwargs):
         # batch size must be always 1 (per subject)
         batch_size = 1
-        super(HcpDataLoader, self).__init__(*args, batch_size=batch_size, **kwargs)
+        super(HcpDataLoader, self).__init__(*args, batch_size=batch_size, collate_fn=self.collate_fn, **kwargs)
 
     def collate_fn(self, batch):
         # filter empty items
-        # batch = list(filter(lambda x: x[0] is not None, batch))
-        # if len(batch) == 0:
-        if batch[0][0] is None:
+        batch = list(filter(lambda x: x[0] is not None, batch))
+        if len(batch) == 0:
+            # if batch[0][0] is None:
             return empty_hcp_record()
         else:
             return torch.utils.data.dataloader.default_collate(batch)
