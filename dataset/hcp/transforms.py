@@ -6,7 +6,7 @@ from ext.loukasa.graph_coarsening.libraries.coarsening_utils import graphs, coar
 class TrivialCoarsening(object):
 
     def __call__(self, weight_matrix):
-        graph_list = [self._to_coos(weight_matrix)]
+        graph_list = [[self._to_coos(weight_matrix)]]
         mapping_list = list(range(0, weight_matrix.shape[0]))
 
         return graph_list, mapping_list
