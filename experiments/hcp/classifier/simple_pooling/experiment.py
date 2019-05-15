@@ -13,7 +13,7 @@ from util.experiment import get_experiment_params
 from dataset.hcp.torch_data import HcpDataset, HcpDataLoader
 from dataset.hcp.transforms import SpectralCoarsening
 
-from nn.chebnet import ChebTimeConv
+from nn.chebnet import ChebTimeConvDeprecated
 
 from experiments.hcp.classifier.runner import Runner
 
@@ -28,12 +28,11 @@ class NetTGCNTwoLayer(torch.nn.Module):
         super(NetTGCNTwoLayer, self).__init__()
 
         f1, g1, k1, h1 = 1, 64, 12, 15
-        self.conv1 = ChebTimeConv(f1, g1, K=k1, H=h1)
+        self.conv1 = ChebTimeConvDeprecated(f1, g1, K=k1, H=h1)
 
         f2, g2, k2, h2 = g1, 32, 8, 1
-        self.conv2 = ChebTimeConv(f2, g2, K=k1, H=1)
+        self.conv2 = ChebTimeConvDeprecated(f2, g2, K=k1, H=h2)
 
-        # n2 = mat_size
         n2 = resolution[0]
         c = 6
         self.fc1 = torch.nn.Linear(int(n2 * g2), c)

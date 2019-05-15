@@ -162,7 +162,7 @@ class ChebConvTimeFFT(torch.nn.Module):
                                          self.weight.size(0))
 
 
-class ChebTimeConv(torch.nn.Module):
+class ChebTimeConvDeprecated(torch.nn.Module):
     r"""The chebyshev spectral graph convolutional operator from the
     `"Convolutional Neural Networks on Graphs with Fast Localized Spectral
     Filtering" <https://arxiv.org/abs/1606.09375>`_ paper
@@ -192,7 +192,7 @@ class ChebTimeConv(torch.nn.Module):
     """
 
     def __init__(self, in_channels, out_channels, K, H, bias=True):
-        super(ChebTimeConv, self).__init__()
+        super(ChebTimeConvDeprecated, self).__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
