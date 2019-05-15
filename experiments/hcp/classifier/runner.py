@@ -33,7 +33,45 @@ class Runner:
         k = 1.
         self.w = torch.tensor([1., k, k, k, k, k]).to(self.device)
 
-    def run(self, args, model):
+    def save_model(self, model, epoch='last'):
+
+        model_furl = self._get_model_furl(epoch)
+        self.monitor_logger.info('Saving model at: {:} for epoch {:}.'.format(model_furl, epoch))
+        torch.save(model.state_dict(), model_furl)
+
+    def load_model(self, model, epoch='last'):
+
+        model_furl = self._get_model_furl(epoch)
+        self.monitor_logger.info('Loading model from: {:} for epoch {:}.'.format(model_furl, epoch))
+        model_pars = torch.load('{:}'.format(model_furl))
+        model.load_state_dict(model_pars)
+
+        return model
+
+    def initial_save_and_load(self, model, restart=False):
+        # saves first iteration
+        self.save_model(model, 0)
+
+        # also save first iteration as last, if no previous higher iterations have been saved
+        if self._check_saved_model(epoch='last') is False or restart is True:
+            self.save_model(model, epoch='last')
+
+        # loads last iteration saved, if any
+        model = self.load_model(model)
+        return model
+
+    def _check_saved_model(self, epoch='last'):
+
+        model_furl = self._get_model_furl(epoch)
+        exists = os.path.exists(model_furl)
+
+        return exists
+
+    def _get_model_furl(self, epoch):
+        model_furl = os.path.join(self.path, 'out', 'model_epoch_{:}.pt'.format(epoch))
+        return model_furl
+
+    def run(self, args, model, run_initial_test=True):
 
         mini_batch = 10
 
@@ -46,25 +84,31 @@ class Runner:
 
         self.monitor_logger.info('starting experiment')
 
+        if run_initial_test is True:
+            test_loss_value, predictions, targets = self.test_batch(model)
+
+            self.print_eval(test_loss_value, predictions, targets, idx=0, header='Test epoch:')
+            self.print_confusion_matrix(predictions, targets)
+
         for epoch in range(1, args.epochs + 1):
 
-            train_loss_value, predictions, targets = self.train_minibatch(model, epoch, optimizer, mini_batch)
+            train_loss_value, predictions, targets = self.train_minibatch(model, optimizer, mini_batch)
 
             self.print_eval(train_loss_value, predictions, targets, idx=epoch, header='Train epoch:')
             self.print_confusion_matrix(predictions, targets)
 
             scheduler.step()
 
-            test_loss_value, predictions, targets = self.test_batch(model, epoch)
+            if args.save_model:
+                self.save_model(model, epoch)
+                self.save_model(model)
+
+            test_loss_value, predictions, targets = self.test_batch(model)
 
             self.print_eval(test_loss_value, predictions, targets, idx=epoch, header='Test epoch:')
             self.print_confusion_matrix(predictions, targets)
 
-            if args.save_model:
-                model_furl = os.path.join(self.path, 'out', 'model_epoch_{:}'.format(epoch) + '.pt')
-                torch.save(model.state_dict(), model_furl)
-
-    def train_minibatch(self, model, epoch, optimizer, mini_batch=10):
+    def train_minibatch(self, model, optimizer, mini_batch=10):
         """
         Loads input data (BOLD signal windows and corresponding target motor tasks) from one patient at a time,
         and minibatches the windowed input signal while training the TGCN by optimizing for minimal training loss.
@@ -86,9 +130,6 @@ class Runner:
                                      format(subject[0], batch_idx + 1, len(self.train_loader.dataset.subjects)))
 
             self.monitor_logger.info(print_memory())
-
-            cues = cues.to(self.device)
-            graph_list = [g[0].to(self.device) for g in graph_list]
 
             batch_loss_value = 0
             batch_predictions = []
@@ -122,7 +163,7 @@ class Runner:
 
         return train_loss_value, predictions, targets
 
-    def test_batch(self, model, epoch):
+    def test_batch(self, model):
         """
         Evaluates the model trained in train_minibatch() on patients loaded from the test set.
         :return: test_loss and correct, the # of correct predictions
@@ -144,11 +185,10 @@ class Runner:
                 self.monitor_logger.info('testing on subject {:} ({:} of {:})'.
                                          format(subject[0], batch_idx + 1, len(self.test_loader.dataset.subjects)))
 
-                cues = cues.to(self.device)
-                graph_list = [g[0].to(self.device) for g in graph_list]
+                self.monitor_logger.info(print_memory())
 
                 for i in range(len(bold_ts)):
-                    output = model(bold_ts[i].to(self.device), graph_list, mapping_list)
+                    output = model(bold_ts[i].to(self.device), graph_list[0], mapping_list[0])
                     target = torch.argmax(cues[:, i], dim=1)
                     prediction = output.max(1, keepdim=True)[1][0]
 

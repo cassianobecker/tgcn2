@@ -57,10 +57,12 @@ class HcpDataset(torch.utils.data.Dataset):
         return len(self.subjects)
 
     def __getitem__(self, idx):
+        subject = self.subjects[idx]
+        return self.data_for_subject(subject)
+
+    def data_for_subject(self, subject):
 
         x_windowed, y_one_hot, graph_list_tensor, mapping_list_tensor, _ = empty_hcp_record()
-
-        subject = self.subjects[idx]
 
         try:
             self.reader.logger.info("feeding subject {:}".format(subject))
@@ -75,6 +77,7 @@ class HcpDataset(torch.utils.data.Dataset):
             cues = data['functional'][self.session]['cues']
             ts = data['functional'][self.session]['ts']
             x_windowed, y_one_hot = self.transform(cues, ts, mapping_list)
+            y_one_hot = torch.tensor(y_one_hot, dtype=torch.long).to(self.device)
 
         except SkipSubjectException:
             self.reader.logger.warning("skipping subject {:}".format(subject))

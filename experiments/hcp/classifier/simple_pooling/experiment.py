@@ -44,16 +44,16 @@ class NetTGCNTwoLayer(torch.nn.Module):
         :param x: windowed BOLD signal to as input to the TGCN
         :return: output of the TGCN forward pass
         """
-
-        x = self.conv1(x, graph_list[0])
+        x = self.conv1(x, graph_list[0][0])
+        # the return shape of conv 1 should be compatible with the expected input shape of the next layer
+        x = x.permute(2, 1, 0)
 
         x = fuctional.relu(x)
 
+        # the pooling operation (a matrix multiplication with mapping list) - can it be made sparse?
         x = torch.matmul(mapping_list[1].type(dtype=torch.cuda.FloatTensor), x)
 
-        x = x.permute(2, 1, 0)
-
-        x = self.conv2(x, graph_list[1])
+        x = self.conv2(x, graph_list[1][0])
 
         x = x.view(x.shape[0], -1)
         x = self.fc1(x)
@@ -71,7 +71,6 @@ def experiment(params, args):
     :param args: keyword arguments from main() as parameters for the experiment
     :return: None
     """
-
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 
@@ -89,7 +88,10 @@ def experiment(params, args):
     model = NetTGCNTwoLayer(data_shape, resolutions)
 
     runner = Runner(device, params, train_loader, test_loader)
-    runner.run(args, model)
+
+    model = runner.initial_save_and_load(model, restart=False)
+
+    runner.run(args, model, run_initial_test=False)
 
 
 if __name__ == '__main__':
@@ -118,7 +120,7 @@ if __name__ == '__main__':
                         help='random seed (default: 1)')
     parser.add_argument('--log-interval', type=int, default=10, metavar='N',
                         help='how many batches to wait before logging training status')
-    parser.add_argument('--save-model', action='store_true', default=False,
+    parser.add_argument('--save-model', action='store_true', default=True,
                         help='For Saving the current Model')
     args = parser.parse_args()
 
