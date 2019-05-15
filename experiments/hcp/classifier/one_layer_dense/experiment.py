@@ -40,7 +40,7 @@ class NetTGCNBasic(torch.nn.Module):
         :return: output of the TGCN forward pass
         """
 
-        x = self.conv1(x, graph_list[0])
+        x = self.conv1(x, graph_list[0][0])
 
         x = functional.relu(x)
 
@@ -77,11 +77,9 @@ def experiment(params, args):
     model = NetTGCNBasic(data_shape)
 
     runner = Runner(device, params, train_loader, test_loader)
-    runner.run(args, model)
+    runner.run(args, model, run_initial_test=False)
 
 
-# TO RUN:
-# nohup python -u -m experiments.hcp.classifier.one_layer_dense.experiment > experiments/hcp/classifier/one_layer_dense/log/out.txt &
 if __name__ == '__main__':
     params = get_experiment_params(__file__, __name__)
 

@@ -40,7 +40,7 @@ class NetTGCNBasic(torch.nn.Module):
         :return: output of the TGCN forward pass
         """
 
-        x = self.conv1(x, graph_list[0])
+        x = self.conv1(x, graph_list[0][0])
 
         x = functional.relu(x)
 
@@ -78,7 +78,7 @@ def experiment(params, args):
 
     runner = Runner(device, params, train_loader, test_loader)
 
-    model = runner.initial_save_and_load(model, restart=False)
+    model = runner.initial_save_and_load(model, restart=False, run_initial_test=False)
 
     runner.run(args, model)
 

@@ -82,7 +82,7 @@ class Runner:
             model = torch.nn.DataParallel(model)
         model.to(self.device)
 
-        self.monitor_logger.info('starting experiment')
+        self.monitor_logger.info(' ***** starting experiment *****')
 
         if run_initial_test is True:
             test_loss_value, predictions, targets = self.test_batch(model)
