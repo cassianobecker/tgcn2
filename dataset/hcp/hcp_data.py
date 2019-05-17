@@ -136,6 +136,7 @@ class HcpReader:
         # parcellate time series
         ts_p = self.parcellate(ts, parc_vector, parc_labels)
 
+        # normalize
         ts_norm = self.normalize_time_series(ts_p)
         return ts_norm
 
@@ -223,6 +224,7 @@ class HcpReader:
         return x_parc
 
     def normalize_time_series(self, ts_p):
+
         scaler = StandardScaler()
         ts_p = scaler.fit_transform(np.swapaxes(ts_p, 0, 1))
         return np.swapaxes(ts_p, 0, 1)

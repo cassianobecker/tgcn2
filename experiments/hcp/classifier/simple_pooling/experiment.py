@@ -5,7 +5,7 @@ import argparse
 
 import torch
 import torch.utils.data
-import torch.nn.functional as fuctional
+import torch.nn.functional as functional
 
 from util.torch import seed_everything
 from util.experiment import get_experiment_params
@@ -13,7 +13,7 @@ from util.experiment import get_experiment_params
 from dataset.hcp.torch_data import HcpDataset, HcpDataLoader
 from dataset.hcp.transforms import SpectralCoarsening
 
-from nn.chebnet import ChebTimeConvDeprecated
+from nn.chebnet import ChebTimeConv, ChebTimeConvDeprecated
 
 from experiments.hcp.classifier.runner import Runner
 
@@ -28,10 +28,10 @@ class NetTGCNTwoLayer(torch.nn.Module):
         super(NetTGCNTwoLayer, self).__init__()
 
         f1, g1, k1, h1 = 1, 64, 12, 15
-        self.conv1 = ChebTimeConvDeprecated(f1, g1, K=k1, H=h1)
+        self.conv1 = ChebTimeConv(f1, g1, K=k1, H=h1, collapse_H=True)
 
         f2, g2, k2, h2 = g1, 32, 8, 1
-        self.conv2 = ChebTimeConvDeprecated(f2, g2, K=k1, H=h2)
+        self.conv2 = ChebTimeConv(f2, g2, K=k1, H=h2, collapse_H=False)
 
         n2 = resolution[0]
         c = 6
@@ -43,21 +43,31 @@ class NetTGCNTwoLayer(torch.nn.Module):
         :param x: windowed BOLD signal to as input to the TGCN
         :return: output of the TGCN forward pass
         """
+        x = x.permute(1, 2, 0)
+
         x = self.conv1(x, graph_list[0][0])
         # the return shape of conv 1 should be compatible with the expected input shape of the next layer
-        x = x.permute(2, 1, 0)
 
-        x = fuctional.relu(x)
+        x = functional.relu(x)
 
         # the pooling operation (a matrix multiplication with mapping list) - can it be made sparse?
-        x = torch.matmul(mapping_list[1].type(dtype=torch.cuda.FloatTensor), x)
+
+        b = mapping_list[1][0].type(dtype=torch.cuda.FloatTensor)
+
+        x_temp = x.permute(2, 3, 0, 1)
+        x_temp = torch.matmul(b, x_temp)
+        x = x_temp.permute(2, 3, 0, 1)
+
+        #TODO: WORK OUT THE PERMUTE IN/OUT IN SPECTRALCOARSENING
+
+        #x = torch.einsum("qmn,qnhf->qmhf", mapping_list[1].type(dtype=torch.cuda.FloatTensor), x)
 
         x = self.conv2(x, graph_list[1][0])
 
-        x = x.view(x.shape[0], -1)
+        x = x.view(x.shape[3], -1)
         x = self.fc1(x)
 
-        return fuctional.log_softmax(x, dim=1)
+        return functional.log_softmax(x, dim=1)
 
     def number_of_parameters(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
@@ -73,7 +83,7 @@ def experiment(params, args):
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    resolutions = [70]
+    resolutions = [71]
     coarsen = SpectralCoarsening(resolutions)
 
     train_set = HcpDataset(params, device, 'train', coarsen=coarsen)
@@ -88,7 +98,7 @@ def experiment(params, args):
 
     runner = Runner(device, params, train_loader, test_loader)
 
-    model = runner.initial_save_and_load(model, restart=False)
+    model = runner.initial_save_and_load(model, restart=True)
 
     runner.run(args, model, run_initial_test=False)
 

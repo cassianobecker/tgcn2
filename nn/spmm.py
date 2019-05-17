@@ -72,7 +72,7 @@ def spmm_batch_3(index, value, m, matrix):
     row, col = index
     matrix = matrix if matrix.dim() > 1 else matrix.unsqueeze(-1)
 
-    out = matrix[:, col]
+    out = matrix[col, :]
     try:
         sh = out.shape[3:]
         sh = matrix.shape[2:]
@@ -86,7 +86,7 @@ def spmm_batch_3(index, value, m, matrix):
     sh = sh + (value.shape[0],)
     temp = value.expand(sh)
     temp = temp.permute(2, 0, 1)
-    out = torch.einsum("abcd,bcd->abcd", out, temp)
-    out = scatter_add(out, row, dim=1, dim_size=m)
+    out = torch.einsum("abcd,acd->abcd", out, temp)
+    out = scatter_add(out, row, dim=0, dim_size=m)
 
     return out

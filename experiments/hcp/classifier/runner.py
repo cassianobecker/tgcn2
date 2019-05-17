@@ -137,7 +137,7 @@ class Runner:
 
             for i in range(len(bold_ts)):
 
-                output = model(bold_ts[i].to(self.device), graph_list[0], mapping_list)
+                output = model(bold_ts[i].to(self.device), graph_list, mapping_list)
                 target = torch.argmax(cues[:, i], dim=1)
                 prediction = output.max(1, keepdim=True)[1][0]
 
@@ -188,7 +188,7 @@ class Runner:
                 self.monitor_logger.info(print_memory())
 
                 for i in range(len(bold_ts)):
-                    output = model(bold_ts[i].to(self.device), graph_list[0], mapping_list[0])
+                    output = model(bold_ts[i].to(self.device), graph_list, mapping_list)
                     target = torch.argmax(cues[:, i], dim=1)
                     prediction = output.max(1, keepdim=True)[1][0]
 

@@ -12,3 +12,4 @@
 - scipy (io, signal, sparse, spatial) (1.2.1)
 - sklearn (metrics, neighbors) (0.20.1/0.20.4)
 - matplotlib (3.0.2/3.0.3)
+- PyGSP (0.5.1)
