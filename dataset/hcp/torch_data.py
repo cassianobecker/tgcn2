@@ -71,8 +71,8 @@ class HcpDataset(torch.utils.data.Dataset):
 
             graph_list, mapping_list = self.coarsen(data['adjacency'])
 
-            graph_list_tensor = self._to_tensor(graph_list)
-            mapping_list_tensor = self._to_tensor(mapping_list)
+            graph_list_tensor = self._to_tensor(graph_list, dtype=torch.long)
+            mapping_list_tensor = self._to_tensor(mapping_list, dtype=torch.float)
 
             cues = data['functional'][self.session]['cues']
             ts = data['functional'][self.session]['ts']
@@ -92,8 +92,8 @@ class HcpDataset(torch.utils.data.Dataset):
         for subject in self.subjects:
             self.reader.process_subject(subject, [self.session])
 
-    def _to_tensor(self, graph_list):
-        coos = [torch.tensor(graph, dtype=torch.long).to(self.device) for graph in graph_list]
+    def _to_tensor(self, graph_list, dtype):
+        coos = [torch.tensor(graph, dtype=dtype).to(self.device) for graph in graph_list]
         return coos
 
 

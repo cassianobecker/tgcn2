@@ -77,7 +77,10 @@ def experiment(params, args):
     model = NetTGCNBasic(data_shape)
 
     runner = Runner(device, params, train_loader, test_loader)
-    runner.run(args, model, run_initial_test=False)
+
+    model = runner.initial_save_and_load(model, restart=False)
+
+    runner.run(args, model, run_initial_test=True)
 
 
 if __name__ == '__main__':

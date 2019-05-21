@@ -78,9 +78,9 @@ def experiment(params, args):
 
     runner = Runner(device, params, train_loader, test_loader)
 
-    model = runner.initial_save_and_load(model, restart=False, run_initial_test=False)
+    model = runner.initial_save_and_load(model, restart=False)
 
-    runner.run(args, model)
+    runner.run(args, model, run_initial_test=False)
 
 
 if __name__ == '__main__':
