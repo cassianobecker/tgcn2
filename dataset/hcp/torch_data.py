@@ -7,7 +7,7 @@ from util.path import get_root
 from util.logging import get_logger, set_logger
 
 from dataset.hcp.hcp_data import HcpReader, SkipSubjectException
-from dataset.hcp.transforms import SlidingWindow, TrivialCoarsening
+from dataset.hcp.transforms import SlidingWindow, TrivialCoarsening, PseudoSpectralCoarsening
 
 
 def get_database_settings():
@@ -22,7 +22,7 @@ def get_database_settings():
 
 
 def empty_hcp_record():
-    return None, None, None, None, None
+    return None, None, None, None, None, None
 
 
 class HcpDataset(torch.utils.data.Dataset):
@@ -48,7 +48,7 @@ class HcpDataset(torch.utils.data.Dataset):
         self.subjects = self.reader.load_subject_list(list_url)
 
         if coarsen is None:
-            coarsen = TrivialCoarsening()
+            coarsen = PseudoSpectralCoarsening()   #TODO: CHANGE
         self.coarsen = coarsen
 
         self.transform = SlidingWindow(params['TIME_SERIES'], coarsen=coarsen)
@@ -62,16 +62,17 @@ class HcpDataset(torch.utils.data.Dataset):
 
     def data_for_subject(self, subject):
 
-        x_windowed, y_one_hot, graph_list_tensor, mapping_list_tensor, _ = empty_hcp_record()
+        x_windowed, y_one_hot, graph_list_tensor, edge_weight_list_tensor, mapping_list_tensor, _ = empty_hcp_record()
 
         try:
             self.reader.logger.info("feeding subject {:}".format(subject))
 
             data = self.reader.process_subject(subject, [self.session])
 
-            graph_list, mapping_list = self.coarsen(data['adjacency'])
+            graph_list, edge_weight_list, mapping_list = self.coarsen(data['adjacency'])
 
             graph_list_tensor = self._to_tensor(graph_list, dtype=torch.long)
+            edge_weight_list_tensor = self._to_tensor(edge_weight_list, dtype=torch.float)
             mapping_list_tensor = self._to_tensor(mapping_list, dtype=torch.float)
 
             cues = data['functional'][self.session]['cues']
@@ -82,7 +83,7 @@ class HcpDataset(torch.utils.data.Dataset):
         except SkipSubjectException:
             self.reader.logger.warning("skipping subject {:}".format(subject))
 
-        return x_windowed, y_one_hot, graph_list_tensor, mapping_list_tensor, subject
+        return x_windowed, y_one_hot, graph_list_tensor, edge_weight_list_tensor, mapping_list_tensor, subject
 
     def data_shape(self):
         shape = self.reader.get_adjacency(self.subjects[0]).shape[0]

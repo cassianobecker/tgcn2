@@ -1,15 +1,53 @@
+import random
 import numpy as np
 from util.encode import one_hot
 from ext.loukasa.graph_coarsening.libraries.coarsening_utils import graphs, coarsen
+from scipy.sparse import csr_matrix
 
 
 class TrivialCoarsening(object):
 
     def __call__(self, weight_matrix):
-        graph_list = [self._to_coos(weight_matrix)]
-        mapping_list = list(range(0, weight_matrix.shape[0]))
+        order = list(range(0, weight_matrix.shape[0]))
+        eye = np.identity(weight_matrix.shape[0])
+        eye = eye[:, order]
+        eye_mtx = np.asmatrix(eye)
 
-        return graph_list, mapping_list
+        graph_list = [self._to_coos(weight_matrix)]
+        mapping_list = [[], eye_mtx]
+        edge_weight_list = [weight_matrix.data]
+
+        graph_list.append(self._to_coos(weight_matrix))
+        edge_weight_list.append(weight_matrix.data)
+
+        return graph_list, edge_weight_list, mapping_list
+
+    def _to_coos(self, A):
+        return [A.tocoo().row, A.tocoo().col]
+
+
+class PseudoSpectralCoarsening(object):
+
+    def __call__(self, weight_matrix):    #TODO: SET TO FALSE
+        order = list(range(0, weight_matrix.shape[0]))
+        eye = np.identity(weight_matrix.shape[0])
+
+        graph_list = [self._to_coos(weight_matrix)]
+        mapping_list = [[]]
+        edge_weight_list = [weight_matrix.data]
+
+        #random.shuffle(order)
+        eye = eye[:, order]
+        eye_mtx = np.asmatrix(eye)
+
+        w_temp = csr_matrix(eye) @ weight_matrix
+        weight_matrix_2 = w_temp @ csr_matrix(eye).transpose()
+
+        graph_list.append(self._to_coos(weight_matrix_2))
+        mapping_list.append(eye_mtx)
+        edge_weight_list.append(weight_matrix_2.data)
+
+        return graph_list, edge_weight_list, mapping_list
 
     def _to_coos(self, A):
         return [A.tocoo().row, A.tocoo().col]
@@ -21,20 +59,26 @@ class SpectralCoarsening(object):
         self.resolutions = resolutions
 
     def __call__(self, weight_matrix):
-        graph_list = [self._to_coos(weight_matrix)]
+        current_weight_matrix = weight_matrix
+
+        graph_list = [self._to_coos(current_weight_matrix)]
+        edge_weight_list = [current_weight_matrix.data]
         mapping_list = [[]]
 
         for resolution in self.resolutions:
-            graph_at_resolution = graphs.Graph(W=weight_matrix)
+            graph_at_resolution = graphs.Graph(W=current_weight_matrix)
             graph_ratio = 1 - resolution / graph_at_resolution.A.shape[0]
 
             coarsening_mapping, coarsened_graph, _, _ = coarsen(graph_at_resolution,
-                                                                K=10, r=graph_ratio, method='variation_edges')
+                                                            K=10, r=graph_ratio, method='variation_edges')
 
-            graph_list.append(self._to_coos(coarsened_graph.A))
+            current_weight_matrix = csr_matrix(coarsened_graph.W)
+
+            graph_list.append(self._to_coos(current_weight_matrix))
+            edge_weight_list.append(current_weight_matrix.data)
             mapping_list.append(coarsening_mapping.todense())
 
-        return graph_list, mapping_list
+        return graph_list, edge_weight_list, mapping_list
 
     def coarsen_signal(self, signal, mapping):
         xn = np.dot(signal, mapping)

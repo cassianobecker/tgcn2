@@ -48,7 +48,7 @@ class Runner:
 
         return model
 
-    def initial_save_and_load(self, model, restart=False):
+    def initial_save_and_load(self, model, restart=True):
         # saves first iteration
         self.save_model(model, 0)
 
@@ -120,7 +120,7 @@ class Runner:
         predictions = []
         targets = []
 
-        for batch_idx, (bold_ts, cues, graph_list, mapping_list, subject) in enumerate(self.train_loader):
+        for batch_idx, (bold_ts, cues, graph_list, edge_weight_list, mapping_list, subject) in enumerate(self.train_loader):
 
             if subject is None:
                 self.monitor_logger.warning('empty training batch, skipping')
@@ -137,7 +137,7 @@ class Runner:
 
             for i in range(len(bold_ts)):
 
-                output = model(bold_ts[i].to(self.device), graph_list, mapping_list)
+                output = model(bold_ts[i].to(self.device), graph_list, edge_weight_list, mapping_list)
                 target = torch.argmax(cues[:, i], dim=1)
                 prediction = output.max(1, keepdim=True)[1][0]
 
@@ -176,7 +176,7 @@ class Runner:
 
         with torch.no_grad():
 
-            for batch_idx, (bold_ts, cues, graph_list, mapping_list, subject) in enumerate(self.test_loader):
+            for batch_idx, (bold_ts, cues, graph_list, edge_weight_list, mapping_list, subject) in enumerate(self.test_loader):
 
                 if subject is None:
                     self.monitor_logger.warning('empty test batch, skipping')
@@ -188,7 +188,7 @@ class Runner:
                 self.monitor_logger.info(print_memory())
 
                 for i in range(len(bold_ts)):
-                    output = model(bold_ts[i].to(self.device), graph_list, mapping_list[0])
+                    output = model(bold_ts[i].to(self.device), graph_list, edge_weight_list, mapping_list)
                     target = torch.argmax(cues[:, i], dim=1)
                     prediction = output.max(1, keepdim=True)[1][0]
 

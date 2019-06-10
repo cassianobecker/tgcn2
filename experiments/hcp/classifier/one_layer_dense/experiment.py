@@ -12,7 +12,7 @@ from util.experiment import get_experiment_params
 
 from dataset.hcp.torch_data import HcpDataset, HcpDataLoader
 
-from nn.chebnet import ChebTimeConvDeprecated
+from nn.chebnet import ChebTimeConv
 
 from experiments.hcp.classifier.runner import Runner
 
@@ -27,24 +27,25 @@ class NetTGCNBasic(torch.nn.Module):
         super(NetTGCNBasic, self).__init__()
 
         f1, g1, k1, h1 = 1, 64, 25, 15
-        self.conv1 = ChebTimeConvDeprecated(f1, g1, K=k1, H=h1)
+        self.conv1 = ChebTimeConv(f1, g1, K=k1, H=h1)
 
         n2 = mat_size
         c = 6
         self.fc1 = torch.nn.Linear(int(n2 * g1), c)
 
-    def forward(self, x, graph_list, mapping_list):
+    def forward(self, x, graph_list, edge_weight_list, mapping_list):
         """
         Computes forward pass through the time graph convolutional network
         :param x: windowed BOLD signal to as input to the TGCN
         :return: output of the TGCN forward pass
         """
+        x = x.permute(1, 2, 0)
 
-        x = self.conv1(x, graph_list[0][0])
+        x = self.conv1(x, graph_list[0][0], edge_weight_list[0][0])
 
         x = functional.relu(x)
 
-        x = x.view(x.shape[0], -1)
+        x = x.view(x.shape[3], -1)
         x = self.fc1(x)
 
         return functional.log_softmax(x, dim=1)
@@ -78,7 +79,7 @@ def experiment(params, args):
 
     runner = Runner(device, params, train_loader, test_loader)
 
-    model = runner.initial_save_and_load(model, restart=False)
+    model = runner.initial_save_and_load(model, restart=True)
 
     runner.run(args, model, run_initial_test=True)
 
