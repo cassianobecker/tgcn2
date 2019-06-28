@@ -26,7 +26,7 @@ class NetTGCNBasic(torch.nn.Module):
     def __init__(self, mat_size):
         super(NetTGCNBasic, self).__init__()
 
-        f1, g1, k1, h1 = 1, 64, 25, 15
+        f1, g1, k1, h1 = 1, 32, 12, 15
         self.conv1 = ChebTimeConv(f1, g1, K=k1, H=h1)
 
         n2 = mat_size
@@ -45,7 +45,7 @@ class NetTGCNBasic(torch.nn.Module):
 
         x = functional.relu(x)
 
-        x = x.view(x.shape[3], -1)
+        x = x.contiguous().view(x.shape[3], -1)
         x = self.fc1(x)
 
         return functional.log_softmax(x, dim=1)
@@ -76,6 +76,7 @@ def experiment(params, args):
     data_shape = train_set.data_shape()
 
     model = NetTGCNBasic(data_shape)
+    print(model)
     print(model.number_of_parameters())
 
     runner = Runner(device, params, train_loader, test_loader)
@@ -95,13 +96,13 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description=__name__)
 
-    parser.add_argument('--batch-size', type=int, default=1, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=10, metavar='N',
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
     parser.add_argument('--epochs', type=int, default=50, metavar='N',
                         help='number of epochs to train (default: 10)')
-    parser.add_argument('--lr', type=float, default=0.001, metavar='LR',
+    parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
                         help='learning rate (default: 0.01)')
     parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
                         help='SGD momentum (default: 0.5)')
