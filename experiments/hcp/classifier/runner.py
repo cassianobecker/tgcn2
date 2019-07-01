@@ -73,8 +73,6 @@ class Runner:
 
     def run(self, args, model, run_initial_test=True):
 
-        mini_batch = 10
-
         optimizer = optim.Adam(model.parameters(), lr=args.lr)
         scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
 
@@ -92,7 +90,7 @@ class Runner:
 
         for epoch in range(1, args.epochs + 1):
 
-            train_loss_value, predictions, targets = self.train_minibatch(model, optimizer, mini_batch)
+            train_loss_value, predictions, targets = self.train_batch(model, optimizer)
 
             self.print_eval(train_loss_value, predictions, targets, idx=epoch, header='Train epoch:')
             self.print_confusion_matrix(predictions, targets)
@@ -120,7 +118,8 @@ class Runner:
         predictions = []
         targets = []
 
-        for batch_idx, (bold_ts, cues, graph_list, edge_weight_list, mapping_list, subject) in enumerate(self.train_loader):
+        for batch_idx, (bold_ts, cues, graph_list, edge_weight_list, mapping_list, subject) in enumerate(
+                self.train_loader):
 
             if subject is None:
                 self.monitor_logger.warning('empty training batch, skipping')
@@ -163,9 +162,139 @@ class Runner:
 
         return train_loss_value, predictions, targets
 
+    def train_batch(self, model, optimizer, num_steps=270): #TODO: magic number
+        """
+        Loads input data (BOLD signal windows and corresponding target motor tasks) from one patient at a time,
+        and minibatches the windowed input signal while training the TGCN by optimizing for minimal training loss.
+        :return: train_loss
+        """
+        model.train()
+
+        train_loss_value = 0
+        predictions = []
+        targets = []
+
+        batch_ctr = 0
+        batch_loss_value = 0
+        batch_predictions = []
+        batch_targets = []
+
+        for batch_idx, (bold_ts, cues, graph_list, edge_weight_list, mapping_list, subject) in enumerate(self.train_loader):
+
+            if subject is None:
+                self.monitor_logger.warning('empty training batch, skipping')
+                continue
+
+            self.monitor_logger.info('training on subject {:} ({:} of {:})'.
+                                     format(subject[0], batch_idx + 1, len(self.train_loader.dataset.subjects)))
+
+            self.monitor_logger.info(print_memory())
+
+            output = model(bold_ts.to(self.device), graph_list, edge_weight_list, mapping_list)
+            target = torch.argmax(cues[:], dim=1)
+            prediction = output.max(1, keepdim=True)
+
+            optimizer.zero_grad()
+            loss = F.nll_loss(output, target, weight=self.w)
+            #loss = loss / 5
+            loss.backward()
+            optimizer.step()
+
+            train_loss_value += loss.item()
+            predictions.extend(prediction.indices.tolist())
+            targets.extend(target.tolist())
+
+            batch_loss_value += loss.item()
+            batch_predictions.extend(prediction.indices.tolist())
+            batch_targets.extend(target.tolist())
+
+            step_size = int(num_steps / len(bold_ts))
+
+            batch_ctr += 1
+            if batch_ctr > 0 and batch_ctr % step_size == 0:
+                self.print_eval(batch_loss_value, batch_predictions, batch_targets, idx=int(batch_ctr/step_size), header='patient idx:')
+                batch_loss_value = 0
+                batch_predictions = []
+                batch_targets = []
+
+        return train_loss_value, predictions, targets
+
+    def train_batch_distributed(self, model, optimizer, num_steps=270): #TODO: magic number
+        """
+        Loads input data (BOLD signal windows and corresponding target motor tasks) from one patient at a time,
+        and minibatches the windowed input signal while training the TGCN by optimizing for minimal training loss.
+        :return: train_loss
+        """
+        model.train()
+
+        train_loss_value = 0
+        predictions = []
+        targets = []
+
+        batch_ctr = 0
+        batch_loss_value = 0
+        batch_predictions = []
+        batch_targets = []
+
+        for batch_idx, (bold_ts, cues, graph_list, edge_weight_list, mapping_list, subject) in enumerate(self.train_loader):
+
+            if subject is None:
+                self.monitor_logger.warning('empty training batch, skipping')
+                continue
+
+            if model.module.subject != subject[0]:
+
+                model.module.subject = subject[0]
+                model.module.graph_list_0 = graph_list[0]
+                model.module.graph_list_1 = graph_list[1]
+                model.module.edge_weight_list_0 = edge_weight_list[0]
+                model.module.edge_weight_list_1 = edge_weight_list[1]
+                model.module.mapping_list_0 = mapping_list[0]
+                model.module.mapping_list_1 = mapping_list[1]
+
+            self.monitor_logger.info('training on subject {:} ({:} of {:})'.
+                                     format(subject[0], batch_idx + 1, len(self.train_loader.dataset.subjects)))
+
+            self.monitor_logger.info(print_memory())
+
+            output = model(bold_ts.to(self.device))
+            target = torch.argmax(cues[:], dim=1)
+            prediction = output.max(1, keepdim=True)
+
+            #torch.cuda.synchronize()
+            #loss = F.nll_loss(output, target, weight=self.w)
+
+            optimizer.zero_grad()
+            loss = F.nll_loss(output, target, weight=self.w)
+            #loss = loss / 5
+            loss.backward()
+            optimizer.step()
+
+            train_loss_value += loss.item()
+            predictions.extend(prediction.indices.tolist())
+            targets.extend(target.tolist())
+
+            batch_loss_value += loss.item()
+            batch_predictions.extend(prediction.indices.tolist())
+            batch_targets.extend(target.tolist())
+
+
+
+
+            step_size = int(num_steps / len(bold_ts))
+
+            batch_ctr += 1
+            if batch_ctr > 0 and batch_ctr % step_size == 0:
+                self.print_eval(batch_loss_value, batch_predictions, batch_targets, idx=int(batch_ctr/step_size), header='patient idx:')
+                batch_loss_value = 0
+                batch_predictions = []
+                batch_targets = []
+
+        return train_loss_value, predictions, targets
+
     def test_batch(self, model):
         """
-        Evaluates the model trained in train_minibatch() on patients loaded from the test set.
+        Evaluates the model trained in train_batch() on patients loaded from the test set.
         :return: test_loss and correct, the # of correct predictions
         """
         model.eval()
@@ -187,17 +316,16 @@ class Runner:
 
                 self.monitor_logger.info(print_memory())
 
-                for i in range(len(bold_ts)):
-                    output = model(bold_ts[i].to(self.device), graph_list, edge_weight_list, mapping_list)
-                    target = torch.argmax(cues[:, i], dim=1)
-                    prediction = output.max(1, keepdim=True)[1][0]
+                output = model(bold_ts.to(self.device), graph_list, edge_weight_list, mapping_list)
+                target = torch.argmax(cues[:], dim=1)
+                prediction = output.max(1, keepdim=True)
 
-                    torch.cuda.synchronize()
+                torch.cuda.synchronize()
 
-                    test_loss_value += F.nll_loss(output, target, reduction='sum').item()
+                test_loss_value += F.nll_loss(output, target, reduction='sum').item()
 
-                    predictions.extend(prediction.tolist())
-                    targets.extend(target.tolist())
+                predictions.extend(prediction.indices.tolist())
+                targets.extend(target.tolist())
 
         return test_loss_value, predictions, targets
 

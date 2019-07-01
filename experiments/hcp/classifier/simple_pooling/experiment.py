@@ -19,6 +19,72 @@ from experiments.hcp.classifier.runner import Runner
 from torchsummary import summary
 
 
+class NetTGCNDistributed(torch.nn.Module):
+    """
+    A 1-Layer time graph convolutional network
+    :param mat_size: temporary parameter to fix the FC1 size
+    """
+
+    def __init__(self, g1, g2, resolution):
+        super(NetTGCNDistributed, self).__init__()
+
+        self.subject = '0'
+        #self.graph_list = None
+        #self.edge_weight_list = None
+        #self.mapping_list = None
+
+        self.register_buffer('graph_list_0', None)
+        self.register_buffer('graph_list_1', None)
+        self.register_buffer('edge_weight_list_0', None)
+        self.register_buffer('edge_weight_list_1', None)
+        self.register_buffer('mapping_list_0', None)
+        self.register_buffer('mapping_list_1', None)
+
+        f1, k1, h1 = 1, 12, 15
+        self.conv1 = ChebTimeConv(f1, g1, K=k1, H=h1, collapse_H=False)
+
+        f2, k2, h2 = g1, 12, 15
+        self.conv2 = ChebTimeConv(f2, g2, K=k1, H=h2, collapse_H=True)
+
+        n2 = resolution[0]
+        c = 6
+        self.fc1 = torch.nn.Linear(int(n2 * g2), c)
+
+    def forward(self, x):
+        """
+        Computes forward pass through the time graph convolutional network
+        :param x: windowed BOLD signal to as input to the TGCN
+        :return: output of the TGCN forward pass
+        """
+        x = x.permute(1, 2, 0)
+
+        x = self.conv1(x, self.graph_list_0[0], self.edge_weight_list_0[0])
+        # the return shape of conv 1 should be compatible with the expected input shape of the next layer
+
+        x = functional.relu(x)
+
+        # the pooling operation (a matrix multiplication with mapping list) - can it be made sparse?
+
+        b = self.mapping_list_1[0].type(dtype=torch.cuda.FloatTensor)
+
+        x_temp = x.permute(2, 3, 0, 1)
+        x_temp = torch.matmul(b, x_temp)
+        x = x_temp.permute(2, 3, 0, 1)
+
+        #TODO: WORK OUT THE PERMUTE IN/OUT IN SPECTRALCOARSENING
+
+        x = self.conv2(x, self.graph_list_1[0], self.edge_weight_list_1[0])
+
+        x = x.contiguous().view(x.shape[3], -1)
+        x = self.fc1(x)
+
+        return functional.log_softmax(x, dim=1)
+
+    def number_of_parameters(self):
+        return sum(p.numel() for p in self.parameters() if p.requires_grad)
+
+
+
 class NetTGCNTwoLayer(torch.nn.Module):
     """
     A 1-Layer time graph convolutional network
@@ -209,6 +275,10 @@ def experiment(params, args):
     resolutions = [145]
     #resolutions = [140, 130]
     coarsen = SpectralCoarsening(resolutions)
+
+    #ratios = [1, 1, 1, 1, 1, 12]
+    #weights = 1 / torch.Tensor(ratios)
+    #sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, 270 * 50)
 
     train_set = HcpDatasetNew(params, device, 'train', coarsen=coarsen)
     train_loader = HcpDataLoader(train_set, shuffle=False)
