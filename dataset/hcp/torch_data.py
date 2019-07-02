@@ -195,7 +195,7 @@ class HcpDataLoader(torch.utils.data.DataLoader):
 
     def __init__(self, *args, **kwargs):
         # batch size must be always 1 (per subject)
-        batch_size = 2 # TODO: How to get this from args
+        batch_size = 1 # TODO: How to get this from args
         super(HcpDataLoader, self).__init__(*args, batch_size=batch_size, collate_fn=self.collate_fn, **kwargs)
 
     def collate_fn(self, batch):

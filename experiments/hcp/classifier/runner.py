@@ -1,4 +1,5 @@
 import os
+import random
 import torch
 import torch.utils.data
 import torch.optim as optim
@@ -162,7 +163,7 @@ class Runner:
 
         return train_loss_value, predictions, targets
 
-    def train_batch(self, model, optimizer, num_steps=270): #TODO: magic number
+    def train_batch(self, model, optimizer, num_steps=270, class_balance=True): #TODO: magic number
         """
         Loads input data (BOLD signal windows and corresponding target motor tasks) from one patient at a time,
         and minibatches the windowed input signal while training the TGCN by optimizing for minimal training loss.
@@ -174,16 +175,47 @@ class Runner:
         predictions = []
         targets = []
 
-        batch_ctr = 0
         batch_loss_value = 0
         batch_predictions = []
         batch_targets = []
 
+        current_subj = '0'
+        ctr_subj = 0
+
         for batch_idx, (bold_ts, cues, graph_list, edge_weight_list, mapping_list, subject) in enumerate(self.train_loader):
+
+            if batch_idx == 0:
+                current_subj = subject[0]
 
             if subject is None:
                 self.monitor_logger.warning('empty training batch, skipping')
                 continue
+
+            if class_balance:
+
+                indices = []
+                for i in range(len(cues)):
+                    if cues[i, 0] == 1:
+                        r = random.uniform(0, 1)
+                        if r > 0.09:
+                            continue
+                        else:
+                            indices.append(i)
+                    else:
+                        indices.append(i)
+
+                if len(indices) == 0:
+                    continue
+                bold_ts = bold_ts[indices]
+                cues = cues[indices]
+
+            if subject[0] != current_subj:
+                self.print_eval(batch_loss_value, batch_predictions, batch_targets, idx=ctr_subj, header='patient idx:')
+                batch_loss_value = 0
+                batch_predictions = []
+                batch_targets = []
+                current_subj = subject[0]
+                ctr_subj += 1
 
             self.monitor_logger.info('training on subject {:} ({:} of {:})'.
                                      format(subject[0], batch_idx + 1, len(self.train_loader.dataset.subjects)))
@@ -207,15 +239,6 @@ class Runner:
             batch_loss_value += loss.item()
             batch_predictions.extend(prediction.indices.tolist())
             batch_targets.extend(target.tolist())
-
-            step_size = int(num_steps / len(bold_ts))
-
-            batch_ctr += 1
-            if batch_ctr > 0 and batch_ctr % step_size == 0:
-                self.print_eval(batch_loss_value, batch_predictions, batch_targets, idx=int(batch_ctr/step_size), header='patient idx:')
-                batch_loss_value = 0
-                batch_predictions = []
-                batch_targets = []
 
         return train_loss_value, predictions, targets
 
@@ -278,9 +301,6 @@ class Runner:
             batch_predictions.extend(prediction.indices.tolist())
             batch_targets.extend(target.tolist())
 
-
-
-
             step_size = int(num_steps / len(bold_ts))
 
             batch_ctr += 1
@@ -292,7 +312,7 @@ class Runner:
 
         return train_loss_value, predictions, targets
 
-    def test_batch(self, model):
+    def test_batch(self, model, class_balance=True):
         """
         Evaluates the model trained in train_batch() on patients loaded from the test set.
         :return: test_loss and correct, the # of correct predictions
@@ -310,6 +330,24 @@ class Runner:
                 if subject is None:
                     self.monitor_logger.warning('empty test batch, skipping')
                     continue
+
+                if class_balance:
+
+                    indices = []
+                    for i in range(len(cues)):
+                        if cues[i, 0] == 1:
+                            r = random.uniform(0, 1)
+                            if r > 0.09:
+                                continue
+                            else:
+                                indices.append(i)
+                        else:
+                            indices.append(i)
+
+                    if len(indices) == 0:
+                        continue
+                    bold_ts = bold_ts[indices]
+                    cues = cues[indices]
 
                 self.monitor_logger.info('testing on subject {:} ({:} of {:})'.
                                          format(subject[0], batch_idx + 1, len(self.test_loader.dataset.subjects)))
