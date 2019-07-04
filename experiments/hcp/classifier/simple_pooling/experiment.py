@@ -288,7 +288,9 @@ def experiment(params, args):
 
     model = NetTGCNTwoLayer(16, 32, resolutions)
     print(model)
-    print(model.number_of_parameters())
+    print('# Parameters: {:}'.format(model.number_of_parameters()))
+    print('LR: {:}'.format(args.lr))
+    print('Batch Size: {:}'.format(args.batch_size))
 
     runner = Runner(device, params, train_loader, test_loader)
 
@@ -307,13 +309,13 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description=__name__)
 
-    parser.add_argument('--batch-size', type=int, default=30, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=1, metavar='N',
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
     parser.add_argument('--epochs', type=int, default=50, metavar='N',
                         help='number of epochs to train (default: 10)')
-    parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
+    parser.add_argument('--lr', type=float, default=0.00005, metavar='LR',
                         help='learning rate (default: 0.01)')
     parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
                         help='SGD momentum (default: 0.5)')
