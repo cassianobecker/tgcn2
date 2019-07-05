@@ -10,7 +10,7 @@ import torch.nn.functional as functional
 from util.torch import seed_everything
 from util.experiment import get_experiment_params
 
-from dataset.hcp.torch_data import HcpDataset, HcpDataLoader
+from dataset.hcp.torch_data import HcpDatasetNew, HcpDataLoader
 
 from nn.chebnet import ChebTimeConv, ChebTimeConvDeprecated
 
@@ -23,13 +23,13 @@ class NetTGCNBasic(torch.nn.Module):
     :param mat_size: temporary parameter to fix the FC1 size
     """
 
-    def __init__(self, mat_size):
+    def __init__(self, g1, resolution):
         super(NetTGCNBasic, self).__init__()
 
-        f1, g1, k1, h1 = 1, 32, 12, 15
+        f1, g1, k1, h1 = 1, g1, 12, 15
         self.conv1 = ChebTimeConv(f1, g1, K=k1, H=h1)
 
-        n2 = mat_size
+        n2 = resolution
         c = 6
         self.fc1 = torch.nn.Linear(int(n2 * g1), c)
 
@@ -67,17 +67,19 @@ def experiment(params, args):
 
     coarsen = None
 
-    train_set = HcpDataset(params, device, 'train', coarsen=coarsen)
+    train_set = HcpDatasetNew(params, device, 'train', coarsen=coarsen)
     train_loader = HcpDataLoader(train_set, shuffle=False)
 
-    test_set = HcpDataset(params, device, 'test', coarsen=coarsen)
+    test_set = HcpDatasetNew(params, device, 'test', coarsen=coarsen)
     test_loader = HcpDataLoader(test_set, shuffle=False)
 
     data_shape = train_set.data_shape()
 
-    model = NetTGCNBasic(data_shape)
+    model = NetTGCNBasic(32, data_shape)
     print(model)
-    print(model.number_of_parameters())
+    print('# Parameters: {:}'.format(model.number_of_parameters()))
+    print('LR: {:}'.format(args.lr))
+    print('Batch Size: {:}'.format(args.batch_size))
 
     runner = Runner(device, params, train_loader, test_loader)
 
@@ -96,13 +98,13 @@ if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description=__name__)
 
-    parser.add_argument('--batch-size', type=int, default=10, metavar='N',
+    parser.add_argument('--batch-size', type=int, default=1, metavar='N',
                         help='input batch size for training (default: 64)')
     parser.add_argument('--test-batch-size', type=int, default=1000, metavar='N',
                         help='input batch size for testing (default: 1000)')
     parser.add_argument('--epochs', type=int, default=50, metavar='N',
                         help='number of epochs to train (default: 10)')
-    parser.add_argument('--lr', type=float, default=0.0001, metavar='LR',
+    parser.add_argument('--lr', type=float, default=0.00005, metavar='LR',
                         help='learning rate (default: 0.01)')
     parser.add_argument('--momentum', type=float, default=0.5, metavar='M',
                         help='SGD momentum (default: 0.5)')

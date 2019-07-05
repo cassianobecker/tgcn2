@@ -144,13 +144,13 @@ class NetTGCNUncoarsened(torch.nn.Module):
     :param mat_size: temporary parameter to fix the FC1 size
     """
 
-    def __init__(self, mat_size, resolution):
+    def __init__(self, g1, g2):
         super(NetTGCNUncoarsened, self).__init__()
 
-        f1, g1, k1, h1 = 1, 64, 12, 15
+        f1, g1, k1, h1 = 1, g1, 12, 15
         self.conv1 = ChebTimeConv(f1, g1, K=k1, H=h1, collapse_H=False)
 
-        f2, g2, k2, h2 = g1, 32, 12, 15
+        f2, g2, k2, h2 = g1, g2, 12, 15
         self.conv2 = ChebTimeConv(f2, g2, K=k1, H=h2, collapse_H=True)
 
         n2 = 148 #resolution[0]
@@ -191,7 +191,6 @@ class NetTGCNUncoarsened(torch.nn.Module):
 
     def number_of_parameters(self):
         return sum(p.numel() for p in self.parameters() if p.requires_grad)
-
 
 
 class NetTGCNThreeLayer(torch.nn.Module):
@@ -274,11 +273,7 @@ def experiment(params, args):
 
     resolutions = [145]
     #resolutions = [140, 130]
-    coarsen = SpectralCoarsening(resolutions)
-
-    #ratios = [1, 1, 1, 1, 1, 12]
-    #weights = 1 / torch.Tensor(ratios)
-    #sampler = torch.utils.data.sampler.WeightedRandomSampler(weights, 270 * 50)
+    coarsen = None#SpectralCoarsening(resolutions)
 
     train_set = HcpDatasetNew(params, device, 'train', coarsen=coarsen)
     train_loader = HcpDataLoader(train_set, shuffle=False)
@@ -286,7 +281,7 @@ def experiment(params, args):
     test_set = HcpDatasetNew(params, device, 'test', coarsen=coarsen)
     test_loader = HcpDataLoader(test_set, shuffle=False)
 
-    model = NetTGCNTwoLayer(16, 32, resolutions)
+    model = NetTGCNUncoarsened(16, 32)
     print(model)
     print('# Parameters: {:}'.format(model.number_of_parameters()))
     print('LR: {:}'.format(args.lr))
