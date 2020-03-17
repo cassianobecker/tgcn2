@@ -7,18 +7,20 @@ from scipy.sparse import csr_matrix
 
 class TrivialCoarsening(object):
 
-    def __call__(self, weight_matrix):
+    def __call__(self, weight_matrix, level=2):
         order = list(range(0, weight_matrix.shape[0]))
         eye = np.identity(weight_matrix.shape[0])
         eye = eye[:, order]
         eye_mtx = np.asmatrix(eye)
 
         graph_list = [self._to_coos(weight_matrix)]
-        mapping_list = [[], eye_mtx]
+        mapping_list = [[]]
         edge_weight_list = [weight_matrix.data]
 
-        graph_list.append(self._to_coos(weight_matrix))
-        edge_weight_list.append(weight_matrix.data)
+        for i in range(level):
+            graph_list.append(self._to_coos(weight_matrix))
+            mapping_list.append(eye_mtx)
+            edge_weight_list.append(weight_matrix.data)
 
         return graph_list, edge_weight_list, mapping_list
 
@@ -56,29 +58,43 @@ class PseudoSpectralCoarsening(object):
 class SpectralCoarsening(object):
 
     def __init__(self, resolutions):
+        self.mtx_default = None
+        self.graph_default = None
+        self.weights_default = None
+        self.mapping_default = None
+
         self.resolutions = resolutions
 
     def __call__(self, weight_matrix):
-        current_weight_matrix = weight_matrix
+        if self.mtx_default is not None and (self.mtx_default - weight_matrix).nnz == 0:
+            return self.graph_default, self.weights_default, self.mapping_default
+        else:
 
-        graph_list = [self._to_coos(current_weight_matrix)]
-        edge_weight_list = [current_weight_matrix.data]
-        mapping_list = [[]]
+            self.mtx_default = weight_matrix
+            current_weight_matrix = weight_matrix
 
-        for resolution in self.resolutions:
-            graph_at_resolution = graphs.Graph(W=current_weight_matrix)
-            graph_ratio = 1 - resolution / graph_at_resolution.A.shape[0]
+            graph_list = [self._to_coos(current_weight_matrix)]
+            edge_weight_list = [current_weight_matrix.data]
+            mapping_list = [[]]
 
-            coarsening_mapping, coarsened_graph, _, _ = coarsen(graph_at_resolution,
-                                                            K=10, r=graph_ratio, method='variation_edges')
+            for resolution in self.resolutions:
+                graph_at_resolution = graphs.Graph(W=current_weight_matrix)
+                graph_ratio = 1 - resolution / graph_at_resolution.A.shape[0]
 
-            current_weight_matrix = csr_matrix(coarsened_graph.W)
+                coarsening_mapping, coarsened_graph, _, _ = coarsen(graph_at_resolution,
+                                                                K=10, max_levels=60, r=graph_ratio, method='variation_edges')
 
-            graph_list.append(self._to_coos(current_weight_matrix))
-            edge_weight_list.append(current_weight_matrix.data)
-            mapping_list.append(coarsening_mapping.todense())
+                current_weight_matrix = csr_matrix(coarsened_graph.W)
 
-        return graph_list, edge_weight_list, mapping_list
+                graph_list.append(self._to_coos(current_weight_matrix))
+                edge_weight_list.append(current_weight_matrix.data)
+                mapping_list.append(coarsening_mapping.todense())
+
+                self.graph_default = graph_list
+                self.weights_default = edge_weight_list
+                self.mapping_default = mapping_list
+
+            return graph_list, edge_weight_list, mapping_list
 
     def coarsen_signal(self, signal, mapping):
         xn = np.dot(signal, mapping)

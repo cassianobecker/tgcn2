@@ -1,0 +1,9 @@
+2020-03-16 13:50:39,576 - HcpDownloader - ERROR - request unsuccessful: Error 404
+2020-03-16 13:50:39,578 - HcpReader - ERROR - file /Users/semo/PycharmProjects/tgcn2/dataset/hcp/data/HCP_1200/100206/MNINonLinear/Results/tfMRI_MOTOR_LR/tfMRI_MOTOR_LR_Atlas.dtseries.nii not found.
+2020-03-16 13:50:39,578 - HcpReader - WARNING - skipping subject 100206
+2020-03-16 13:55:12,779 - HcpDownloader - ERROR - request unsuccessful: Error 404
+2020-03-16 13:55:12,781 - HcpReader - ERROR - file /Users/semo/PycharmProjects/tgcn2/dataset/hcp/data/HCP_1200/100206/MNINonLinear/Results/tfMRI_MOTOR_LR/tfMRI_MOTOR_LR_Atlas.dtseries.nii not found.
+2020-03-16 13:55:12,781 - HcpReader - WARNING - skipping subject 100206
+2020-03-16 13:58:42,185 - HcpDownloader - ERROR - request unsuccessful: Error 404
+2020-03-16 13:58:42,187 - HcpReader - ERROR - file /Users/semo/PycharmProjects/tgcn2/dataset/hcp/data/HCP_1200/100206/MNINonLinear/Results/tfMRI_MOTOR_LR/tfMRI_MOTOR_LR_Atlas.dtseries.nii not found.
+2020-03-16 13:58:42,187 - HcpReader - WARNING - skipping subject 100206

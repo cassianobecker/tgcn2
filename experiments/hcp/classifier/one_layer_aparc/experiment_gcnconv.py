@@ -28,12 +28,12 @@ class NetTGCNBasic(torch.nn.Module):
         super(NetTGCNBasic, self).__init__()
 
         f1, g1, k1, h1 = 1, g1, 12, 15
-        self.conv1 = ChebTimeConv(f1, g1, K=k1, H=h1)
+        self.conv1 = GCNConv(f1, g1)
 
         n2 = resolution
         temp_1 = 1200
         c = 6
-        self.fc1 = torch.nn.Linear(int(n2 * g1), temp_1)
+        self.fc1 = torch.nn.Linear(int(n2 * g1* h1), temp_1)
         self.fc2 = torch.nn.Linear(temp_1, c)
 
     def forward(self, x, graph_list, edge_weight_list, mapping_list):
@@ -44,11 +44,11 @@ class NetTGCNBasic(torch.nn.Module):
         """
         x = x.permute(1, 2, 0)
 
-        x = self.conv1(x, graph_list[0][0], edge_weight_list[0][0])
+        x = self.conv1(x, graph_list[0][0])
 
         x = functional.relu(x)
 
-        x = x.contiguous().view(x.shape[3], -1)
+        x = x.contiguous().view(1, -1)
         x = self.fc1(x)
         x = self.fc2(x)
 

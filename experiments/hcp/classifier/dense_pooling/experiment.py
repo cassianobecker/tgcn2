@@ -99,7 +99,7 @@ class NetTGCNTwoLayer(torch.nn.Module):
         f2, k2, h2 = g1, 12, 15
         self.conv2 = ChebTimeConv(f2, g2, K=k1, H=h2, collapse_H=True)
 
-        n2 = resolution[0]
+        n2 = resolution[0] + 1  #TODO: Fix why coarsening outputs 1 more than resolution
         c = 6
         self.fc1 = torch.nn.Linear(int(n2 * g2), c)
 
@@ -338,7 +338,7 @@ def experiment(params, args):
     use_cuda = not args.no_cuda and torch.cuda.is_available()
     device = torch.device("cuda" if use_cuda else "cpu")
 
-    resolutions = [148]
+    resolutions = [147]
     #resolutions = [140, 130]
     coarsen = SpectralCoarsening(resolutions)
 
@@ -348,7 +348,7 @@ def experiment(params, args):
     test_set = HcpDatasetNew(params, device, 'test', coarsen=coarsen)
     test_loader = HcpDataLoader(test_set, shuffle=False)
 
-    model = NetTGCNTwoLayer(32, 16, resolutions)
+    model = NetTGCNTwoLayer(16, 32, resolutions)
     print(model)
     print('# Parameters: {:}'.format(model.number_of_parameters()))
     print('LR: {:}'.format(args.lr))
@@ -366,8 +366,8 @@ if __name__ == '__main__':
 
     os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
-    seed_everything(0)
-    torch.manual_seed(0)
+    seed_everything(123)
+    torch.manual_seed(123)
 
     parser = argparse.ArgumentParser(description=__name__)
 

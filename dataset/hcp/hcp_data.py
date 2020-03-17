@@ -281,6 +281,10 @@ class HcpReader:
         if self.parcellation == 'dense':
             adj, coords = self.get_adjacency_mesh(subject)
 
+        scipy.sparse.save_npz("{0}_coo.npz".format(subject), adj)
+
+        adj_2 = scipy.sparse.load_npz("{0}_coo.npz".format(subject))
+
         return adj
 
     def get_adjacency_mesh(self, subject):
